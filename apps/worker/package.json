@@ -1,0 +1,21 @@
+{
+  "name": "@lms/worker",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dev": "cd ../.. && node --env-file=.env apps/worker/dist/main.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "3.1137.0",
+    "@lms/media-core": "workspace:*",
+    "bullmq": "6.3.8",
+    "ioredis": "5.11.1",
+    "pg": "8.23.0",
+    "reflect-metadata": "0.2.2",
+    "typeorm": "0.3.31",
+    "zod": "4.6.5",
+    "@lms/ai-core": "workspace:*"
+  }
+}

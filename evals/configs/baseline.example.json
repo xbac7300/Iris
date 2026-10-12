@@ -1,0 +1,12 @@
+{
+  "status": "NOT_EVALUATED",
+  "embedding_model_id": "REPLACE_AFTER_SELECTION",
+  "generation_model_id": "REPLACE_AFTER_SELECTION",
+  "embedding_dimensions": null,
+  "retrieval": "exact_pgvector_with_lesson_acl",
+  "top_k": 5,
+  "chunk_tokens": 400,
+  "overlap_tokens": 60,
+  "prompt_version": "NOT_IMPLEMENTED",
+  "dataset_sha256": "NOT_AVAILABLE"
+}

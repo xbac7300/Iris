@@ -1,0 +1,13 @@
+{
+  "expo": {
+    "name": "Topic 16 LMS",
+    "slug": "topic16-lms",
+    "version": "0.1.0",
+    "scheme": "topic16",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "android": { "package": "vn.edu.topic16.lms", "usesCleartextTraffic": true },
+    "ios": { "bundleIdentifier": "vn.edu.topic16.lms" },
+    "plugins": ["expo-router", "expo-secure-store", "expo-video"]
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "name": "topic16-lms",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.34.5",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @lms/api --filter @lms/web dev",
+    "dev:all": "pnpm --parallel --filter @lms/api --filter @lms/web --filter @lms/worker dev",
+    "lint": "eslint apps packages scripts tests",
+    "typecheck": "pnpm --filter @lms/ai-core build && pnpm --filter @lms/media-core build && pnpm -r typecheck",
+    "test": "jest --config jest.config.cjs",
+    "test:integration": "pnpm --filter @lms/ai-core build && pnpm --filter @lms/media-core build && pnpm --filter @lms/api build && node scripts/integration.mjs",
+    "test:e2e": "pnpm --filter @lms/ai-core build && pnpm --filter @lms/media-core build && pnpm --filter @lms/api build && playwright test",
+    "build": "pnpm --filter @lms/ai-core build && pnpm --filter @lms/media-core build && pnpm --filter @lms/api build && pnpm --filter @lms/worker build && pnpm --filter @lms/web build",
+    "db:migrate": "pnpm --filter @lms/api db:migrate",
+    "db:seed": "pnpm --filter @lms/api db:seed",
+    "api:generate": "pnpm --filter @lms/ai-core build && pnpm --filter @lms/media-core build && pnpm --filter @lms/api build && node apps/api/dist/openapi.js && openapi-typescript docs/openapi.json -o packages/api-client/src/schema.d.ts",
+    "test:storage": "node --env-file=.env scripts/check-storage.mjs",
+    "storage:configure": "pnpm --filter @lms/media-core build && node --env-file=.env scripts/configure-storage.mjs",
+    "test:e2e:media": "pnpm --filter @lms/ai-core build && pnpm --filter @lms/media-core build && pnpm --filter @lms/api build && pnpm --filter @lms/worker build && node --env-file=.env scripts/e2e-media.mjs",
+    "test:media": "pnpm --filter @lms/ai-core build && pnpm --filter @lms/media-core build && pnpm --filter @lms/api build && pnpm --filter @lms/worker build && node --env-file=.env --test tests/media.integration.cjs"
+  },
+  "devDependencies": {
+    "@aws-sdk/client-s3": "3.1137.0",
+    "@aws-sdk/s3-request-presigner": "3.1137.0",
+    "@playwright/test": "1.63.0",
+    "@types/jest": "30.0.0",
+    "@types/node": "26.6.2",
+    "embedded-postgres": "18.4.0-beta.17",
+    "eslint": "10.11.0",
+    "jest": "30.5.2",
+    "openapi-typescript": "7.13.0",
+    "ts-jest": "29.4.12",
+    "ts-node": "10.9.2",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.70.1"
+  }
+}

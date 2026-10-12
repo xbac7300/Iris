@@ -1,0 +1,26 @@
+node_modules/
+.env
+.env.*
+!.env.example
+.local/
+dist/
+.next/
+.expo/
+coverage/
+playwright-report/
+test-results/
+__pycache__/
+.pytest_cache/
+.venv/
+*.tsbuildinfo
+*.apk
+*.aab
+apps/mobile/android/.gradle/
+apps/mobile/android/.kotlin/
+apps/mobile/android/**/build/
+apps/mobile/android/**/.cxx/
+apps/mobile/android/local.properties
+*.keystore
+# Video gốc chỉ phục vụ thử nghiệm local, không đưa vào repository.
+*.mp4
+scratch/

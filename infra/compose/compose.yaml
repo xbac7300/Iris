@@ -1,0 +1,51 @@
+name: topic16-lms
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.6-pg18-trixie@sha256:78bf48b801e792f99e3ac62b5036fd3876e9be48afda16c1e331af1c75ceb2ff
+    environment:
+      POSTGRES_USER: lms
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_DB: lms
+    ports: ["127.0.0.1:5432:5432"]
+    volumes:
+      - postgres_data:/var/lib/postgresql
+      - ./init-vector.sql:/docker-entrypoint-initdb.d/001-vector.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lms -d lms"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  redis:
+    image: redis:8.8.3-alpine3.23@sha256:72cb9be22a83a93d233f434b1c954544b0a8da98a9c600ba95a5a43a6d4d32d4
+    command: ["redis-server", "--appendonly", "yes"]
+    ports: ["127.0.0.1:6379:6379"]
+    volumes: ["redis_data:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  storage:
+    image: chrislusf/seaweedfs:4.47@sha256:ce9e796f1fe6f06968f4c04bdaf8f678dad9c8acdfef3d244133d71bfa6bf882
+    command: ["server", "-dir=/data", "-s3", "-s3.config=/etc/seaweedfs/s3.json", "-s3.port.iceberg=0", "-s3.port.lance=0"]
+    ports: ["127.0.0.1:8333:8333"]
+    volumes:
+      - storage_data:/data
+      - ../../.local/s3.json:/etc/seaweedfs/s3.json:ro
+  ollama:
+    image: ollama/ollama:0.34.2@sha256:da6e0dc5651df159e45686fd663c4dbe1624a52c44d7280eeac1551d8f865532
+    profiles: [ai]
+    ports: ["127.0.0.1:11434:11434"]
+    environment:
+      OLLAMA_NUM_PARALLEL: '1'
+      OLLAMA_MAX_LOADED_MODELS: '1'
+      OLLAMA_CONTEXT_LENGTH: '8192'
+      OLLAMA_NO_CLOUD: '1'
+    mem_limit: 7g
+    cpus: 6
+    volumes: ["ollama_data:/root/.ollama"]
+volumes:
+  postgres_data:
+  redis_data:
+  storage_data:
+  ollama_data:

@@ -1,0 +1,11 @@
+packages:
+  - apps/*
+  - packages/*
+onlyBuiltDependencies:
+  - '@nestjs/core'
+  - '@swc/core'
+  - '@embedded-postgres/windows-x64'
+  - '@embedded-postgres/linux-x64'
+  - embedded-postgres
+  - esbuild
+  - sharp
