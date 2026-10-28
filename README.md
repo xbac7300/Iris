@@ -218,7 +218,7 @@ Sau khi khởi chạy thành công:
 ### 6.1. Tệp cài đặt APK độc lập
 Bản phát hành chính thức đã được biên dịch sẵn và lưu ngay tại thư mục gốc:
 - **Đường dẫn**: `C:\CNPM_CK\app-release.apk`
-- **Mã băm kiểm tra (SHA-256)**: `23BA72213EEEBE6117082B7A4103CAC2C8CD099E8BDC4889A64FB16854BCBBF4`
+- **Mã băm kiểm tra (SHA-256)**: `FF33D7BE38CB3B72276073AAD537AAF5E46819798070BFD6AA367E8FB6BC7627`
 
 ### 6.2. Các bước cài đặt lên điện thoại Android thật
 1. **Chuyển tệp APK vào điện thoại**:

@@ -210,7 +210,11 @@ export function CourseEditor({ initial, onBack, onChange, isInstructorMode }: { 
         if (data) allLessons.push(...data);
         if (!data || data.length < 100) break;
       }
-      if (live.current) { setModules(allModules); setLessons(allLessons); setCanRead(Boolean(canManage || allLessons.length > 0)); }
+      if (live.current) {
+        setModules(allModules);
+        setLessons(allLessons);
+        setCanRead(Boolean(canManage || isAdmin || latestCourse?.user_enrolled));
+      }
     } catch (error) { if (live.current) setMessage(errorText(error)); }
     finally { flight.current = false; if (live.current) setLoaded(true); }
   }, [initial.id, canManage, isAdmin]);

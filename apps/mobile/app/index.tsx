@@ -2101,11 +2101,21 @@ export default function Home() {
                               </View>
 
                               <View style={styles.ratingBadge}>
-                                <Text style={[styles.ratingScore, { color: colors.text }]}>
-                                  {course.avg_rating && course.avg_rating > 0
-                                    ? `${course.avg_rating.toFixed(1)}/5`
-                                    : 'Mới'}
-                                </Text>
+                                {course.avg_rating && course.avg_rating > 0 ? (
+                                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                                    <Text style={{ color: '#f59e0b', fontSize: 12, letterSpacing: 1 }}>
+                                      {'★'.repeat(Math.round(course.avg_rating))}
+                                      <Text style={{ color: darkMode ? '#334155' : '#cbd5e1' }}>
+                                        {'★'.repeat(5 - Math.min(5, Math.round(course.avg_rating)))}
+                                      </Text>
+                                    </Text>
+                                    <Text style={[styles.ratingScore, { color: colors.text }]}>
+                                      {course.avg_rating.toFixed(1)}
+                                    </Text>
+                                  </View>
+                                ) : (
+                                  <Text style={[styles.ratingScore, { color: colors.textMuted }]}>Chưa có đánh giá</Text>
+                                )}
                                 {course.review_count && course.review_count > 0 ? (
                                   <Text style={styles.reviewCount}>({course.review_count})</Text>
                                 ) : null}

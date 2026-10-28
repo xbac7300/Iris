@@ -164,8 +164,11 @@ export function CourseFeedback({ courseId, isOwner = false }: { courseId: string
           <div style={{ fontSize: '36px', fontWeight: 800, color: 'var(--accent-color)', lineHeight: 1 }}>
             {avg > 0 ? avg.toFixed(1) : '5.0'}
           </div>
-          <div style={{ color: 'var(--text-secondary)', fontSize: '13px', fontWeight: 600, margin: '6px 0 2px' }}>
-            / 5 sao
+          <div style={{ color: '#f59e0b', fontSize: '16px', letterSpacing: '2px', margin: '6px 0 2px' }}>
+            {'★'.repeat(Math.round(avg || 5))}
+            <span style={{ color: 'var(--border-color)' }}>
+              {'★'.repeat(5 - Math.min(5, Math.round(avg || 5)))}
+            </span>
           </div>
           <small style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
             {totalReviews > 0 ? `${totalReviews} lượt đánh giá` : 'Chưa có đánh giá'}
@@ -207,29 +210,28 @@ export function CourseFeedback({ courseId, isOwner = false }: { courseId: string
             <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 600 }}>
               Đánh giá theo mức độ hài lòng:
             </label>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: '4px', alignItems: 'center', flexWrap: 'wrap' }}>
               {[1, 2, 3, 4, 5].map((star) => (
                 <button
                   key={star}
                   type="button"
                   onClick={() => setRating(star)}
                   style={{
-                    background: star === rating ? 'var(--accent-color)' : 'var(--bg-elevated)',
-                    color: star === rating ? '#ffffff' : 'var(--text-primary)',
-                    border: star === rating ? '1px solid var(--accent-color)' : '1px solid var(--border-color)',
-                    padding: '6px 14px',
-                    borderRadius: '16px',
-                    fontSize: '13px',
-                    fontWeight: 600,
+                    background: 'transparent',
+                    color: star <= rating ? '#f59e0b' : 'var(--border-color)',
+                    border: 'none',
+                    padding: '0 4px',
+                    fontSize: '30px',
                     cursor: 'pointer',
-                    transition: 'all 0.15s ease',
+                    lineHeight: 1,
+                    transition: 'transform 0.1s ease',
                   }}
                   title={`${star} sao`}
                 >
-                  {star} sao
+                  ★
                 </button>
               ))}
-              <span style={{ fontSize: '13px', color: 'var(--text-muted)', marginLeft: '6px', fontWeight: 500 }}>
+              <span style={{ fontSize: '13px', color: 'var(--text-muted)', marginLeft: '10px', fontWeight: 600 }}>
                 {rating === 5 && 'Xuất sắc'}
                 {rating === 4 && 'Rất tốt'}
                 {rating === 3 && 'Tốt / Bình thường'}
@@ -320,8 +322,11 @@ export function CourseFeedback({ courseId, isOwner = false }: { courseId: string
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px', flexWrap: 'wrap', gap: '8px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                       <strong style={{ fontSize: '14px', color: 'var(--text-primary)' }}>{rev.user_name}</strong>
-                      <span style={{ color: 'var(--accent-color)', fontSize: '12px', fontWeight: 600, background: 'var(--bg-elevated)', padding: '2px 8px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
-                        {rev.rating} / 5 sao
+                      <span style={{ color: '#f59e0b', fontSize: '13px', letterSpacing: '2px' }}>
+                        {'★'.repeat(rev.rating)}
+                        <span style={{ color: 'var(--border-color)' }}>
+                          {'★'.repeat(5 - Math.min(5, rev.rating))}
+                        </span>
                       </span>
                     </div>
                     <small style={{ color: 'var(--text-muted)', fontSize: '12px' }}>

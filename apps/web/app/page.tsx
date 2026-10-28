@@ -1207,8 +1207,14 @@ export default function Home() {
                         )}
                       </div>
                       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '12px' }}>
-                        <span style={{ fontWeight: 600 }} title={`Đánh giá trung bình: ${course.avg_rating || 0}/5 (${course.review_count || 0} nhận xét)`}>
-                          {course.avg_rating ? course.avg_rating.toFixed(1) : '5.0'} / 5 sao <small style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({course.review_count || 0})</small>
+                        <span style={{ fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }} title={`Đánh giá trung bình: ${course.avg_rating || 0}/5 (${course.review_count || 0} nhận xét)`}>
+                          <span style={{ color: '#f59e0b', letterSpacing: '1px' }}>
+                            {'★'.repeat(Math.round(course.avg_rating || 5))}
+                            <span style={{ color: 'var(--border-color)' }}>
+                              {'★'.repeat(5 - Math.min(5, Math.round(course.avg_rating || 5)))}
+                            </span>
+                          </span>
+                          <small style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({course.review_count || 0})</small>
                         </span>
                         {(isStudent || !user.roles.includes('ADMIN')) && (
                           <button

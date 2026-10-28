@@ -107,6 +107,7 @@ export default function CourseScreen() {
       const c = await session.api.GET('/api/v1/courses/{id}', {
         params: { path: { id } },
       });
+      let hasReadAccess = false;
       if (c.data) {
         const fetchedCourse = c.data as Course;
         setCourse(fetchedCourse);
@@ -120,6 +121,11 @@ export default function CourseScreen() {
           setPlayback(null);
           return;
         }
+        const userIsOwner = Boolean(session.user && fetchedCourse.owner_id === session.user.id);
+        const userIsAdmin = Boolean(session.user?.roles?.includes('ADMIN'));
+        const userIsEnrolled = Boolean(fetchedCourse.user_enrolled);
+        hasReadAccess = Boolean(userIsOwner || userIsAdmin || userIsEnrolled);
+        setCanRead(hasReadAccess);
       }
 
       // 2. Get Modules
@@ -128,28 +134,34 @@ export default function CourseScreen() {
       });
       if (m.data) setModules(m.data);
 
-      // 3. Get Lessons
-      const l = await session.api.GET('/api/v1/courses/{id}/lessons', {
-        params: { path: { id }, query: { limit: 100 } },
-      });
-      if (l.data) {
-        setCanRead(true);
-        setLessons(l.data);
+      // 3. Get Lessons & Quizzes (only if user has enrolled or has permission)
+      if (hasReadAccess) {
+        const l = await session.api.GET('/api/v1/courses/{id}/lessons', {
+          params: { path: { id }, query: { limit: 100 } },
+        });
+        if (l.data) {
+          setLessons(l.data);
+        } else {
+          setLessons([]);
+        }
+
+        // 4. Get Quizzes
+        const q = await session.api.GET('/api/v1/courses/{id}/quizzes', {
+          params: { path: { id } },
+        });
+        if (q.data) setQuizzes(q.data as Quiz[]);
+
+        // 5. Get Progress (for student)
+        const p = await session.api.GET('/api/v1/me/courses/{id}/progress', {
+          params: { path: { id } },
+        });
+        if (p.data) setProgress(p.data);
       } else {
-        setCanRead(false);
+        setLessons([]);
+        setQuizzes([]);
+        setSelectedLesson(null);
+        setPlayback(null);
       }
-
-      // 4. Get Quizzes
-      const q = await session.api.GET('/api/v1/courses/{id}/quizzes', {
-        params: { path: { id } },
-      });
-      if (q.data) setQuizzes(q.data as Quiz[]);
-
-      // 5. Get Progress (for student)
-      const p = await session.api.GET('/api/v1/me/courses/{id}/progress', {
-        params: { path: { id } },
-      });
-      if (p.data) setProgress(p.data);
     } catch {
       setMessage('Không thể tải thông tin khóa học.');
     }
@@ -438,13 +450,23 @@ export default function CourseScreen() {
               </View>
 
               <View style={styles.metaRating}>
-                <Text style={[styles.metaRatingScore, { color: colors.text }]}>
-                  {course.avg_rating && Number(course.avg_rating) > 0
-                    ? `${Number(course.avg_rating).toFixed(1)} / 5 sao`
-                    : 'Mới'}
-                </Text>
+                {course.avg_rating && Number(course.avg_rating) > 0 ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <Text style={{ color: '#f59e0b', fontSize: 13, letterSpacing: 1 }}>
+                      {'★'.repeat(Math.round(Number(course.avg_rating)))}
+                      <Text style={{ color: colors.border }}>
+                        {'★'.repeat(5 - Math.min(5, Math.round(Number(course.avg_rating))))}
+                      </Text>
+                    </Text>
+                    <Text style={[styles.metaRatingScore, { color: colors.text }]}>
+                      {Number(course.avg_rating).toFixed(1)}
+                    </Text>
+                  </View>
+                ) : (
+                  <Text style={[styles.metaRatingScore, { color: colors.textMuted }]}>Chưa có đánh giá</Text>
+                )}
                 {course.review_count && Number(course.review_count) > 0 ? (
-                  <Text style={[styles.metaReviewCount, { color: colors.textMuted }]}>({course.review_count} đánh giá)</Text>
+                  <Text style={[styles.metaReviewCount, { color: colors.textMuted }]}>({course.review_count})</Text>
                 ) : null}
               </View>
             </View>

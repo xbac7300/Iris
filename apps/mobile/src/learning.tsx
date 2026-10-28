@@ -1071,25 +1071,23 @@ export function NativeReviewsAndComplaints({
           </View>
         ) : isEnrolled ? (
           <View style={[styles.writeReviewBox, { backgroundColor: colors.cardElevated }]}>
-            <Text style={[styles.label, { color: colors.text }]}>Đánh giá của bạn ({rating} / 5 sao):</Text>
-            {/* 5 Stars picker buttons */}
+            <Text style={[styles.label, { color: colors.text }]}>Đánh giá của bạn:</Text>
+            {/* 5 Stars picker with gold stars */}
             <View style={styles.starPickerRow}>
               {[1, 2, 3, 4, 5].map(star => (
                 <TouchableOpacity
                   key={star}
                   onPress={() => setRating(star)}
-                  style={[
-                    styles.starPickerBtn,
-                    star <= rating && { backgroundColor: colors.primary, borderColor: colors.primary },
-                  ]}
+                  style={styles.starPickerBtn}
+                  accessibilityLabel={`${star} sao`}
                 >
                   <Text
                     style={[
                       styles.starPickerText,
-                      { color: star <= rating ? '#ffffff' : colors.text },
+                      { color: star <= rating ? '#f59e0b' : (isDark ? '#334155' : '#cbd5e1'), fontSize: 32 },
                     ]}
                   >
-                    {star}
+                    ★
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -1127,9 +1125,14 @@ export function NativeReviewsAndComplaints({
               <View key={r.id} style={[styles.reviewItem, { borderBottomColor: colors.border }]}>
                 <View style={styles.reviewItemTop}>
                   <Text style={[styles.reviewAuthor, { color: colors.text }]}>{r.user_name || 'Học viên'}</Text>
-                  <Text style={[styles.reviewStars, { color: colors.primary, fontWeight: '700' }]}>
-                    {r.rating || 5} / 5 sao
-                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Text style={{ color: '#f59e0b', fontSize: 13, letterSpacing: 1 }}>
+                      {'★'.repeat(Math.max(1, Math.min(5, r.rating || 5)))}
+                      <Text style={{ color: isDark ? '#334155' : '#cbd5e1' }}>
+                        {'★'.repeat(5 - Math.min(5, Math.max(1, r.rating || 5)))}
+                      </Text>
+                    </Text>
+                  </View>
                 </View>
                 {r.comment ? <Text style={[styles.reviewBody, { color: colors.textSecondary }]}>{r.comment}</Text> : null}
                 <Text style={[styles.reviewDate, { color: colors.textMuted }]}>

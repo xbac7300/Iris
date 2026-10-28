@@ -600,4 +600,32 @@ Toàn bộ các yêu cầu P0 trong AGENTS.md cho Topic 16 LMS (Web 3 vai trò +
    - **Unit Tests**: 16/16 tests PASS (5 suites).
    - **Integration Tests**: 17/17 tests PASS với PostgreSQL thật.
    - **Tệp Release APK**: Đã biên dịch hoàn tất tại `C:\CNPM_CK\app-release.apk`
-   - **SHA-256 Checksum**: `23BA72213EEEBE6117082B7A4103CAC2C8CD099E8BDC4889A64FB16854BCBBF4`
+   - **SHA-256 Checksum**: `FF33D7BE38CB3B72276073AAD537AAF5E46819798070BFD6AA367E8FB6BC7627`
+
+---
+
+### 10. Khắc phục Lỗ hổng Đăng ký Khóa học, Đổi Đánh giá sang Ngôi sao Vàng, Dọn dẹp Dữ liệu Chuẩn & Cập nhật README
+
+1. **Khắc phục triệt để lỗ hổng vào học không cần đăng ký (`canRead`)**:
+   - Trên Web (`course-editor.tsx`): Trước đây điều kiện `canRead` bị đánh giá sai do `allLessons.length > 0` luôn đúng với khóa học đã có bài học. Đã sửa chặt chẽ thành: `canRead = Boolean(canManage || isAdmin || latestCourse?.user_enrolled)`. Nếu học viên chưa đăng ký khóa học, hệ thống bắt buộc hiển thị màn hình giới thiệu kèm nút "Đăng ký khóa học ngay".
+   - Trên Mobile App (`course/[id].tsx`): `canRead` được kiểm tra chặt chẽ `isOwner || isAdmin || user_enrolled`. Nếu false, các thông tin bài giảng, video phát, RAG chat và đề thi đều được làm rỗng để bảo vệ nội dung, hiển thị thẻ kêu gọi "Bắt đầu lộ trình học tập ngay" kèm nút "Đăng ký khóa học".
+
+2. **Chuyển đổi toàn diện Đánh giá Khóa học sang Ngôi sao Vàng (`★`)**:
+   - Thay thế các nút chọn số (1, 2, 3, 4, 5) hoặc chữ ("1 sao", "2 sao") bằng hàng 5 ngôi sao tương tác cỡ lớn màu vàng hổ phách (`#f59e0b` / `★`), sao chưa chọn đổi màu theo Dark/Light theme.
+   - Danh sách đánh giá hiển thị dạng chuỗi sao vàng trực quan `★.repeat(rating) + ☆.repeat(5 - rating)`.
+   - Thẻ khóa học trên trang chủ Web và Mobile hiển thị số sao vàng nổi bật kèm điểm số trung bình.
+
+3. **Dọn dẹp Cơ sở Dữ liệu Chuẩn MVP**:
+   - Xóa toàn bộ dữ liệu ghi danh (`enrollments = 0`), lịch sử xem (`watch_events`, `lesson_progress`, `playback_sessions`, `resume_state`) để học viên đăng nhập phải thực hiện đăng ký khóa học mới được vào học.
+   - Xóa các khóa học thử nghiệm rác (như "Test lỗi"), chỉ giữ đúng **3 khóa học cốt lõi** hoàn chỉnh.
+   - Đảm bảo hệ thống chỉ có đúng **3 tài khoản chính** (`admin@lms.example`, `instructor@lms.example`, `student@lms.example`) với mật khẩu chuẩn `ChangeMe123!`.
+
+4. **Tối ưu README.md**:
+   - Bổ sung tài liệu chi tiết về cấu trúc thư mục, chức năng từng file, luồng triển khai, hướng dẫn đăng nhập, kiểm thử và mã băm SHA-256 APK Android mới nhất.
+
+5. **Kết quả Kiểm thử & Bản phát hành Android APK**:
+   - **Typecheck**: 10/10 workspace packages đạt 0 lỗi (`apps/mobile`, `apps/web`, `apps/api`, `apps/worker`, `packages/*`).
+   - **Unit Tests**: 5/5 test suites passed, 16/16 unit tests passed.
+   - **Integration Tests**: 17/17 tests passed hoàn toàn với PostgreSQL thật.
+   - **Tệp Release APK**: Đã biên dịch hoàn tất tại `C:\CNPM_CK\app-release.apk`
+   - **SHA-256 Checksum**: `FF33D7BE38CB3B72276073AAD537AAF5E46819798070BFD6AA367E8FB6BC7627`
