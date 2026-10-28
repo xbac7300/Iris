@@ -6,7 +6,6 @@ import {
   KeyboardAvoidingView,
   Modal,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Switch,
@@ -15,15 +14,19 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { COURSE_TAGS, type components } from '@lms/api-client';
+import { pickCourseThumbnailImage } from '../src/image-picker';
 import {
+  getActiveRoleMode,
   getCurrentApiUrl,
   initApiUrl,
+  initRoleMode,
   session,
+  setActiveRoleMode as setGlobalActiveRoleMode,
   setApiUrl,
 } from '../src/session';
-import { useTheme, type ThemeColors } from '../src/theme';
+import { useTheme } from '../src/theme';
 
 type Course = components['schemas']['CourseDto'] & {
   is_locked?: boolean;
@@ -54,7 +57,11 @@ export default function Home() {
   const router = useRouter();
   const [user, setUser] = useState(session?.user ?? null);
   const [authTab, setAuthTab] = useState<'login' | 'register'>('login');
-  const { darkMode, toggleDarkMode, setDarkMode, colors } = useTheme();
+  const { darkMode, toggleDarkMode, colors } = useTheme();
+
+  const glassBackdrop = darkMode ? 'rgba(2, 6, 23, 0.92)' : 'rgba(15, 23, 42, 0.86)';
+  const glassCardBg = darkMode ? '#0f172a' : '#ffffff';
+  const glassCardBorder = darkMode ? 'rgba(148, 163, 184, 0.25)' : 'rgba(203, 213, 225, 0.8)';
 
   // Scroll and layout refs
   const mainScrollRef = useRef<ScrollView>(null);
@@ -68,7 +75,11 @@ export default function Home() {
   };
 
   // Active workspace mode: 'STUDENT' | 'INSTRUCTOR' | 'ADMIN'
-  const [activeRoleMode, setActiveRoleMode] = useState<'STUDENT' | 'INSTRUCTOR' | 'ADMIN'>('STUDENT');
+  const [activeRoleMode, setActiveRoleModeState] = useState<'STUDENT' | 'INSTRUCTOR' | 'ADMIN'>(getActiveRoleMode());
+  const setActiveRoleMode = (mode: 'STUDENT' | 'INSTRUCTOR' | 'ADMIN') => {
+    setActiveRoleModeState(mode);
+    setGlobalActiveRoleMode(mode);
+  };
 
   // Login form
   const [email, setEmail] = useState('');
@@ -94,7 +105,7 @@ export default function Home() {
   // Notifications Modal
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [showNotifModal, setShowNotifModal] = useState(false);
-  const [loadingNotifs, setLoadingNotifs] = useState(false);
+  const [_loadingNotifs, setLoadingNotifs] = useState(false);
 
   // Priority Announcement Popover in center of screen
   const [activeAnnouncement, setActiveAnnouncement] = useState<any | null>(null);
@@ -132,6 +143,32 @@ export default function Home() {
   const [resolveAction, setResolveAction] = useState<'CLOSE_COURSE' | 'DISMISS'>('CLOSE_COURSE');
   const [resolveNotes, setResolveNotes] = useState('');
 
+  // Navigation Drawer state
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // User Lock Modal State (matching Web Screenshot 4)
+  const [lockingUser, setLockingUser] = useState<any | null>(null);
+  const [userLockMode, setUserLockMode] = useState<'indefinite' | 'days' | 'range'>('indefinite');
+  const [userLockDays, setUserLockDays] = useState<string>('7');
+  const [userLockFrom, setUserLockFrom] = useState<string>('');
+  const [userLockUntil, setUserLockUntil] = useState<string>('');
+  const [userLockReason, setUserLockReason] = useState<string>('');
+
+  // Course Lock Modal State (matching Web)
+  const [lockingCourse, setLockingCourse] = useState<any | null>(null);
+  const [courseLockMode, setCourseLockMode] = useState<'indefinite' | 'days' | 'range'>('indefinite');
+  const [courseLockDays, setCourseLockDays] = useState<string>('7');
+  const [courseLockFrom, setCourseLockFrom] = useState<string>('');
+  const [courseLockUntil, setCourseLockUntil] = useState<string>('');
+  const [courseLockReason, setCourseLockReason] = useState<string>('');
+
+  // Course Action Modal State (Archive / Delete)
+  const [courseActionTarget, setCourseActionTarget] = useState<{ course: Course; action: 'ARCHIVE' | 'DELETE' } | null>(null);
+  const [courseActionApplyMode, setCourseActionApplyMode] = useState<'immediate' | 'scheduled' | 'range'>('immediate');
+  const [courseActionScheduledAt, setCourseActionScheduledAt] = useState('');
+  const [courseActionScheduledUntil, setCourseActionScheduledUntil] = useState('');
+  const [courseActionReason, setCourseActionReason] = useState('');
+
   // Accordion toggles for Admin sections
   const [showAdminBroadcastForm, setShowAdminBroadcastForm] = useState(true);
   const [showAdminBroadcasts, setShowAdminBroadcasts] = useState(true);
@@ -148,7 +185,10 @@ export default function Home() {
         await session.restore();
         if (session.user) {
           setUser(session.user);
-          if (session.user.roles.includes('ADMIN')) {
+          const savedRole = await initRoleMode();
+          if (savedRole && (session.user.roles.includes(savedRole) || (savedRole === 'ADMIN' && session.user.roles.includes('ADMIN')))) {
+            setActiveRoleMode(savedRole);
+          } else if (session.user.roles.includes('ADMIN')) {
             setActiveRoleMode('ADMIN');
           } else if (session.user.roles.includes('INSTRUCTOR')) {
             setActiveRoleMode('INSTRUCTOR');
@@ -243,6 +283,16 @@ export default function Home() {
       return () => clearInterval(interval);
     }
   }, [user, loadCourses, loadNotifications, checkPriorityAnnouncements, loadAdminData]);
+
+  // Automatically refresh courses and notifications whenever this screen gains focus (e.g. back from course details)
+  useFocusEffect(
+    useCallback(() => {
+      if (session.user) {
+        void loadCourses();
+        void loadNotifications();
+      }
+    }, [loadCourses, loadNotifications])
+  );
 
   // Announcement countdown timer
   useEffect(() => {
@@ -549,32 +599,179 @@ export default function Home() {
     }
   }
 
-  // Admin Toggle User Lock
-  async function handleToggleUserLock(targetUser: any) {
-    const isLocking = !targetUser.disabled;
+  // Share Course Link
+  async function handleShareCourse(course: Course) {
+    const shareUrl = `${getCurrentApiUrl().replace(':4000', ':3000')}/course/${course.id}`;
+    try {
+      Alert.alert(
+        'Chia sẻ khóa học',
+        `Link khóa học: ${shareUrl}`,
+        [{ text: 'Đóng', style: 'cancel' }]
+      );
+    } catch {
+      // Fallback
+    }
+  }
+
+  // Admin Toggle User Lock (matching Web Screenshot 4)
+  function handleToggleUserLock(targetUser: any) {
+    if (targetUser.disabled) {
+      handleUnlockUser(targetUser);
+    } else {
+      setLockingUser(targetUser);
+      setUserLockMode('indefinite');
+      setUserLockDays('7');
+      setUserLockFrom('');
+      setUserLockUntil('');
+      setUserLockReason('');
+    }
+  }
+
+  // Admin Unlock User
+  function handleUnlockUser(targetUser: any) {
     Alert.alert(
-      isLocking ? 'Khóa tài khoản' : 'Mở khóa tài khoản',
-      `Bạn có chắc chắn muốn ${isLocking ? 'khóa' : 'mở khóa'} tài khoản "${targetUser.email}"?`,
+      'Mở khóa tài khoản',
+      `Bạn có chắc chắn muốn mở khóa tài khoản "${targetUser.email}"?`,
       [
         { text: 'Hủy', style: 'cancel' },
         {
-          text: isLocking ? 'Khóa' : 'Mở khóa',
-          style: isLocking ? 'destructive' : 'default',
+          text: 'Mở khóa',
           onPress: async () => {
             try {
               const res = await session.api.POST(
-                (isLocking ? '/api/v1/admin/users/{id}/lock' : '/api/v1/admin/users/{id}/unlock') as any,
-                { params: { path: { id: targetUser.id } }, body: { reason: 'Quản trị viên thao tác' } }
+                '/api/v1/admin/users/{id}/status' as any,
+                { params: { path: { id: targetUser.id } }, body: { disabled: false } }
               );
               if (res.error) throw new Error(res.error.message);
               void loadAdminData();
+              setMessage(`Đã mở khóa tài khoản "${targetUser.display_name}".`);
             } catch (e) {
-              setMessage(e instanceof Error ? e.message : 'Lỗi khi cập nhật tài khoản.');
+              setMessage(e instanceof Error ? e.message : 'Lỗi khi mở khóa tài khoản.');
             }
           },
         },
       ]
     );
+  }
+
+  // Submit Lock User (indefinite, days, range)
+  async function submitLockUser() {
+    if (!lockingUser) return;
+    let computedFrom: string | undefined = undefined;
+    let computedUntil: string | undefined = undefined;
+    const daysNum = parseInt(userLockDays, 10) || 7;
+    if (userLockMode === 'days') {
+      computedUntil = new Date(Date.now() + daysNum * 24 * 60 * 60 * 1000).toISOString();
+    } else if (userLockMode === 'range') {
+      if (!userLockUntil) {
+        setMessage('Vui lòng nhập ngày kết thúc khóa (YYYY-MM-DD).');
+        return;
+      }
+      if (userLockFrom) computedFrom = new Date(userLockFrom).toISOString();
+      computedUntil = new Date(userLockUntil).toISOString();
+    }
+    setBusy(true);
+    try {
+      const res = await session.api.POST('/api/v1/admin/users/{id}/status' as any, {
+        params: { path: { id: lockingUser.id } },
+        body: {
+          disabled: true,
+          ...(userLockMode === 'days' ? { days: daysNum } : {}),
+          ...(computedFrom ? { disabled_from: computedFrom } : {}),
+          ...(computedUntil ? { disabled_until: computedUntil } : {}),
+          reason: userLockReason.trim() || undefined,
+        },
+      });
+      if (res.error) throw new Error(res.error.message);
+      setLockingUser(null);
+      setUserLockReason('');
+      setMessage(`Đã khóa tài khoản "${lockingUser.display_name}".`);
+      void loadAdminData();
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : 'Lỗi khi khóa tài khoản.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Submit Lock Course (indefinite, days, range)
+  async function submitLockCourse() {
+    if (!lockingCourse) return;
+    let computedFrom: string | undefined = undefined;
+    let computedUntil: string | undefined = undefined;
+    const daysNum = parseInt(courseLockDays, 10) || 7;
+    if (courseLockMode === 'days') {
+      computedUntil = new Date(Date.now() + daysNum * 24 * 60 * 60 * 1000).toISOString();
+    } else if (courseLockMode === 'range') {
+      if (!courseLockUntil) {
+        setMessage('Vui lòng nhập ngày kết thúc khóa (YYYY-MM-DD).');
+        return;
+      }
+      if (courseLockFrom) computedFrom = new Date(courseLockFrom).toISOString();
+      computedUntil = new Date(courseLockUntil).toISOString();
+    }
+    setBusy(true);
+    try {
+      const res = await session.api.POST('/api/v1/admin/courses/{id}/lock' as any, {
+        params: { path: { id: lockingCourse.id } },
+        body: {
+          reason: courseLockReason.trim() || 'Tạm khóa bởi Quản trị viên để kiểm duyệt',
+          ...(courseLockMode === 'days' ? { days: daysNum } : {}),
+          ...(computedFrom ? { locked_from: computedFrom } : {}),
+          ...(computedUntil ? { locked_until: computedUntil } : {}),
+        },
+      });
+      if (res.error) throw new Error(res.error.message);
+      setLockingCourse(null);
+      setCourseLockReason('');
+      setMessage(`Đã tạm khóa khóa học "${lockingCourse.title}".`);
+      void loadAdminData();
+      void loadCourses();
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : 'Lỗi khi khóa khóa học.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Execute Course Action (Archive / Delete)
+  async function handleExecuteCourseAction() {
+    if (!courseActionTarget) return;
+    const { course, action } = courseActionTarget;
+    setBusy(true);
+    try {
+      if (action === 'DELETE') {
+        const isScheduled = courseActionApplyMode === 'scheduled' && courseActionScheduledAt.trim().length > 0;
+        const res = await session.api.POST('/api/v1/courses/{id}/delete' as any, {
+          params: { path: { id: course.id } },
+          body: {
+            scheduled_at: isScheduled ? new Date(courseActionScheduledAt).toISOString() : undefined,
+            reason: courseActionReason.trim() || undefined,
+          },
+        });
+        if (res.error) throw new Error(res.error.message);
+        setMessage(isScheduled ? 'Đã lên lịch xóa khóa học thành công!' : 'Đã xóa khóa học thành công!');
+      } else {
+        const isScheduled = courseActionApplyMode === 'scheduled' && courseActionScheduledAt.trim().length > 0;
+        const isRange = courseActionApplyMode === 'range' && courseActionScheduledAt.trim().length > 0;
+        const res = await session.api.POST('/api/v1/courses/{id}/archive' as any, {
+          params: { path: { id: course.id } },
+          body: {
+            scheduled_at: (isScheduled || isRange) ? new Date(courseActionScheduledAt).toISOString() : undefined,
+            scheduled_until: isRange && courseActionScheduledUntil ? new Date(courseActionScheduledUntil).toISOString() : undefined,
+            reason: courseActionReason.trim() || undefined,
+          },
+        });
+        if (res.error) throw new Error(res.error.message);
+        setMessage('Đã lưu trữ / ngừng xuất bản khóa học thành công!');
+      }
+      setCourseActionTarget(null);
+      void loadCourses();
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : 'Lỗi khi thực hiện thao tác khóa học.');
+    } finally {
+      setBusy(false);
+    }
   }
 
   // Admin Toggle User Role
@@ -621,19 +818,19 @@ export default function Home() {
       if (selectedTag !== 'all' && c.tag !== selectedTag) return false;
 
       // Status / Role Tabs
+      if (activeTab === 'enrolled') {
+        return Boolean(c.user_enrolled);
+      }
+      if (activeTab === 'liked') {
+        return Boolean(c.user_liked);
+      }
+
       if (activeRoleMode === 'INSTRUCTOR') {
-        if (activeTab === 'mine') {
-          if (c.owner_id !== user?.id) return false;
-        } else if (activeTab === 'DRAFT') {
-          if (c.status !== 'DRAFT' || c.owner_id !== user?.id) return false;
-        } else if (activeTab === 'PUBLISHED') {
-          if (c.status !== 'PUBLISHED' || c.owner_id !== user?.id) return false;
-        } else if (activeTab === 'ARCHIVED') {
-          if (c.status !== 'ARCHIVED' || c.owner_id !== user?.id) return false;
-        }
-      } else {
-        if (activeTab === 'enrolled') return Boolean(c.user_enrolled);
-        if (activeTab === 'liked') return Boolean(c.user_liked);
+        // Giảng viên chỉ xem khóa học của chính mình ở các tab quản lý
+        if (c.owner_id !== user?.id) return false;
+        if (activeTab === 'DRAFT' && c.status !== 'DRAFT') return false;
+        if (activeTab === 'PUBLISHED' && c.status !== 'PUBLISHED') return false;
+        if (activeTab === 'ARCHIVED' && c.status !== 'ARCHIVED') return false;
       }
 
       // Star filter
@@ -675,38 +872,34 @@ export default function Home() {
       style={[styles.screen, { backgroundColor: colors.bg }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      {/* Top Header Bar */}
+      {/* Top Header Bar with Hamburger */}
       <View style={[styles.topBar, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-        <View style={styles.brandContainer}>
-          <Text style={[styles.brandTitle, { color: colors.text }]}>TOPIC 16 LMS</Text>
-          <Text style={[styles.brandSubtitle, { color: colors.textMuted }]}>
-            {activeRoleMode === 'ADMIN'
-              ? 'Trang Quản trị Hệ thống'
-              : activeRoleMode === 'INSTRUCTOR'
-              ? 'Không gian Giảng viên'
-              : 'Không gian Học tập & RAG AI'}
-          </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+          <TouchableOpacity
+            style={[styles.hamburgerBtn, { backgroundColor: colors.cardElevated, borderColor: colors.border }]}
+            onPress={() => setSidebarOpen(true)}
+            accessibilityLabel="Menu điều hướng"
+          >
+            <Text style={[styles.hamburgerIcon, { color: colors.text }]}>☰</Text>
+          </TouchableOpacity>
+
+          <View style={styles.brandContainer}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <Text style={[styles.brandTitle, { color: colors.text }]}>T16</Text>
+              <Text style={{ fontSize: 10, fontWeight: '700', color: colors.textMuted, letterSpacing: 0.5 }}>LEARNING SPACE</Text>
+              <Text style={{ fontSize: 11, color: colors.textMuted }}>/</Text>
+              <Text style={{ fontSize: 12, fontWeight: '600', color: colors.primary }}>
+                {activeRoleMode === 'ADMIN'
+                  ? 'Quản trị'
+                  : activeRoleMode === 'INSTRUCTOR'
+                  ? 'Giảng viên'
+                  : 'Khóa học'}
+              </Text>
+            </View>
+          </View>
         </View>
 
         <View style={styles.topBarActions}>
-          {/* Dark Mode Toggle */}
-          <TouchableOpacity
-            style={[styles.iconButton, { backgroundColor: colors.cardElevated }]}
-            onPress={toggleDarkMode}
-            accessibilityLabel="Đổi giao diện Sáng / Tối"
-          >
-            <Text style={styles.iconButtonText}>{darkMode ? '☀️' : '🌙'}</Text>
-          </TouchableOpacity>
-
-          {/* Server Config Button */}
-          <TouchableOpacity
-            style={[styles.iconButton, { backgroundColor: colors.cardElevated }]}
-            onPress={() => setShowServerModal(true)}
-            accessibilityLabel="Cấu hình IP máy chủ"
-          >
-            <Text style={styles.iconButtonText}>🌐</Text>
-          </TouchableOpacity>
-
           {/* Notifications Button */}
           {user && (
             <TouchableOpacity
@@ -714,7 +907,7 @@ export default function Home() {
               onPress={() => setShowNotifModal(true)}
               accessibilityLabel="Thông báo"
             >
-              <Text style={styles.iconButtonText}>🔔</Text>
+              <Text style={[styles.notifLabelText, { color: colors.text }]}>TB</Text>
               {unreadNotifsCount > 0 && (
                 <View style={styles.badgeCount}>
                   <Text style={styles.badgeCountText}>
@@ -740,10 +933,281 @@ export default function Home() {
         </View>
       </View>
 
+      {/* MODAL 1.5: SIDEBAR NAVIGATION DRAWER (ANCHORED TO LEFT WITH BLUR BACKDROP) */}
+      <Modal
+        visible={sidebarOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSidebarOpen(false)}
+      >
+        <View style={styles.drawerOverlay}>
+          <View style={[styles.drawerContent, { backgroundColor: colors.card, borderRightColor: colors.border }]}>
+            {/* Drawer Header */}
+            <View style={[styles.drawerHeader, { borderBottomColor: colors.border }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.drawerBrand, { color: colors.text }]}>T16 LEARNING</Text>
+                <Text style={[styles.drawerSubtitle, { color: colors.textMuted }]} numberOfLines={1}>
+                  {user ? (user.display_name || user.email) : 'Chưa đăng nhập'}
+                </Text>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: colors.primary, marginTop: 2 }}>
+                  {activeRoleMode === 'ADMIN' ? 'Chế độ: Quản trị viên' : activeRoleMode === 'INSTRUCTOR' ? 'Chế độ: Giảng viên' : 'Chế độ: Học viên'}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={[styles.drawerCloseBtn, { backgroundColor: colors.cardElevated }]}
+                onPress={() => setSidebarOpen(false)}
+              >
+                <Text style={{ color: colors.text, fontSize: 16, fontWeight: '700' }}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Drawer Nav Items */}
+            <ScrollView style={{ flex: 1, paddingVertical: 12 }}>
+              <Text style={[styles.drawerNavGroupTitle, { color: colors.textMuted }]}>DANH MỤC</Text>
+
+              {activeRoleMode === 'INSTRUCTOR' ? (
+                <>
+                  <TouchableOpacity
+                    style={[
+                      styles.drawerNavItem,
+                      activeTab === 'all' && { backgroundColor: colors.primaryLight },
+                    ]}
+                    onPress={() => {
+                      setActiveTab('all');
+                      setSidebarOpen(false);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.drawerNavItemText,
+                        { color: activeTab === 'all' ? colors.primary : colors.text },
+                        activeTab === 'all' && { fontWeight: '700' },
+                      ]}
+                    >
+                      Khóa học
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.drawerNavItem,
+                      activeTab === 'DRAFT' && { backgroundColor: colors.primaryLight },
+                    ]}
+                    onPress={() => {
+                      setActiveTab('DRAFT');
+                      setSidebarOpen(false);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.drawerNavItemText,
+                        { color: activeTab === 'DRAFT' ? colors.primary : colors.text },
+                        activeTab === 'DRAFT' && { fontWeight: '700' },
+                      ]}
+                    >
+                      Bản nháp của tôi
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              ) : activeRoleMode === 'STUDENT' ? (
+                <>
+                  <TouchableOpacity
+                    style={[
+                      styles.drawerNavItem,
+                      activeTab === 'all' && { backgroundColor: colors.primaryLight },
+                    ]}
+                    onPress={() => {
+                      setActiveTab('all');
+                      setSidebarOpen(false);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.drawerNavItemText,
+                        { color: activeTab === 'all' ? colors.primary : colors.text },
+                        activeTab === 'all' && { fontWeight: '700' },
+                      ]}
+                    >
+                      Tất cả khóa học
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.drawerNavItem,
+                      activeTab === 'enrolled' && { backgroundColor: colors.primaryLight },
+                    ]}
+                    onPress={() => {
+                      setActiveTab('enrolled');
+                      setSidebarOpen(false);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.drawerNavItemText,
+                        { color: activeTab === 'enrolled' ? colors.primary : colors.text },
+                        activeTab === 'enrolled' && { fontWeight: '700' },
+                      ]}
+                    >
+                      Đang học
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.drawerNavItem,
+                      activeTab === 'liked' && { backgroundColor: colors.primaryLight },
+                    ]}
+                    onPress={() => {
+                      setActiveTab('liked');
+                      setSidebarOpen(false);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.drawerNavItemText,
+                        { color: activeTab === 'liked' ? colors.primary : colors.text },
+                        activeTab === 'liked' && { fontWeight: '700' },
+                      ]}
+                    >
+                      Yêu thích
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <TouchableOpacity
+                  style={[
+                    styles.drawerNavItem,
+                    { backgroundColor: colors.primaryLight },
+                  ]}
+                  onPress={() => setSidebarOpen(false)}
+                >
+                  <Text style={[styles.drawerNavItemText, { color: colors.primary, fontWeight: '700' }]}>
+                    Bảng Quản trị Hệ thống
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              <View style={[styles.drawerDivider, { borderBottomColor: colors.border }]} />
+
+              <Text style={[styles.drawerNavGroupTitle, { color: colors.textMuted }]}>CHUYỂN ĐỔI VAI TRÒ</Text>
+
+              {activeRoleMode !== 'STUDENT' && (
+                <TouchableOpacity
+                  style={styles.drawerNavItem}
+                  onPress={() => {
+                    setSidebarOpen(false);
+                    void handleSwitchRole('STUDENT');
+                  }}
+                >
+                  <Text style={[styles.drawerNavItemText, { color: colors.text }]}>
+                    Chuyển sang Học viên
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              {activeRoleMode !== 'INSTRUCTOR' && (
+                user?.roles.includes('INSTRUCTOR') ? (
+                  <TouchableOpacity
+                    style={styles.drawerNavItem}
+                    onPress={() => {
+                      setSidebarOpen(false);
+                      void handleSwitchRole('INSTRUCTOR');
+                    }}
+                  >
+                    <Text style={[styles.drawerNavItemText, { color: colors.text }]}>
+                      Chuyển sang Giảng viên
+                    </Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.drawerNavItem}
+                    onPress={() => {
+                      setSidebarOpen(false);
+                      void handleRegisterExtraRole('INSTRUCTOR');
+                    }}
+                  >
+                    <Text style={[styles.drawerNavItemText, { color: colors.primary, fontWeight: '700' }]}>
+                      + Đăng ký làm Giảng viên
+                    </Text>
+                  </TouchableOpacity>
+                )
+              )}
+
+              {activeRoleMode !== 'ADMIN' && user?.roles.includes('ADMIN') && (
+                <TouchableOpacity
+                  style={styles.drawerNavItem}
+                  onPress={() => {
+                    setSidebarOpen(false);
+                    void handleSwitchRole('ADMIN');
+                  }}
+                >
+                  <Text style={[styles.drawerNavItemText, { color: colors.text }]}>
+                    Chuyển sang Quản trị viên
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              <View style={[styles.drawerDivider, { borderBottomColor: colors.border }]} />
+
+              <Text style={[styles.drawerNavGroupTitle, { color: colors.textMuted }]}>CÀI ĐẶT ỨNG DỤNG</Text>
+
+              {/* Theme toggle row */}
+              <TouchableOpacity
+                style={styles.drawerNavItem}
+                onPress={toggleDarkMode}
+              >
+                <Text style={[styles.drawerNavItemText, { color: colors.text }]}>
+                  Giao diện: {darkMode ? 'Chế độ Tối' : 'Chế độ Sáng'}
+                </Text>
+              </TouchableOpacity>
+
+              {/* Server configuration */}
+              <TouchableOpacity
+                style={styles.drawerNavItem}
+                onPress={() => {
+                  setSidebarOpen(false);
+                  setShowServerModal(true);
+                }}
+              >
+                <Text style={[styles.drawerNavItemText, { color: colors.text }]}>
+                  Cấu hình IP máy chủ API
+                </Text>
+              </TouchableOpacity>
+
+              {user && (
+                <>
+                  <View style={[styles.drawerDivider, { borderBottomColor: colors.border }]} />
+                  <TouchableOpacity
+                    style={styles.drawerNavItem}
+                    onPress={() => {
+                      setSidebarOpen(false);
+                      void handleLogout();
+                    }}
+                  >
+                    <Text style={[styles.drawerNavItemText, { color: '#dc2626', fontWeight: '700' }]}>
+                      Đăng xuất tài khoản
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </ScrollView>
+          </View>
+
+          {/* Backdrop on the right */}
+          <TouchableOpacity
+            style={[styles.drawerBackdrop, { backgroundColor: glassBackdrop }]}
+            activeOpacity={1}
+            onPress={() => setSidebarOpen(false)}
+          />
+        </View>
+      </Modal>
+
       {/* Main Content Area */}
       <ScrollView
         ref={mainScrollRef}
-        contentContainerStyle={styles.scrollContent}
+        style={{ flex: 1, backgroundColor: colors.bg }}
+        contentContainerStyle={[styles.scrollContent, { backgroundColor: colors.bg, flexGrow: 1 }]}
         keyboardShouldPersistTaps="handled"
       >
         {/* Error / Info banner */}
@@ -939,31 +1403,31 @@ export default function Home() {
                       style={[styles.adminQuickNavBtn, { backgroundColor: colors.cardElevated, borderColor: colors.border }]}
                       onPress={() => scrollToAdminSection('broadcast')}
                     >
-                      <Text style={[styles.adminQuickNavBtnText, { color: colors.text }]}>📢 Phát TB</Text>
+                      <Text style={[styles.adminQuickNavBtnText, { color: colors.text }]}>Phát thông báo</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.adminQuickNavBtn, { backgroundColor: colors.cardElevated, borderColor: colors.border }]}
                       onPress={() => scrollToAdminSection('recent')}
                     >
-                      <Text style={[styles.adminQuickNavBtnText, { color: colors.text }]}>🕒 Đã phát ({adminBroadcasts.length})</Text>
+                      <Text style={[styles.adminQuickNavBtnText, { color: colors.text }]}>Đã phát ({adminBroadcasts.length})</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.adminQuickNavBtn, { backgroundColor: colors.cardElevated, borderColor: colors.border }]}
                       onPress={() => scrollToAdminSection('locked')}
                     >
-                      <Text style={[styles.adminQuickNavBtnText, { color: colors.text }]}>🔒 Khóa học ({adminLockedCourses.length})</Text>
+                      <Text style={[styles.adminQuickNavBtnText, { color: colors.text }]}>Khóa học ({adminLockedCourses.length})</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.adminQuickNavBtn, { backgroundColor: colors.cardElevated, borderColor: colors.border }]}
                       onPress={() => scrollToAdminSection('complaints')}
                     >
-                      <Text style={[styles.adminQuickNavBtnText, { color: colors.text }]}>⚠️ Khiếu nại ({adminComplaints.length})</Text>
+                      <Text style={[styles.adminQuickNavBtnText, { color: colors.text }]}>Khiếu nại ({adminComplaints.length})</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.adminQuickNavBtn, { backgroundColor: colors.cardElevated, borderColor: colors.border }]}
                       onPress={() => scrollToAdminSection('users')}
                     >
-                      <Text style={[styles.adminQuickNavBtnText, { color: colors.text }]}>👥 Tài khoản ({adminUsers.length})</Text>
+                      <Text style={[styles.adminQuickNavBtnText, { color: colors.text }]}>Tài khoản ({adminUsers.length})</Text>
                     </TouchableOpacity>
                   </ScrollView>
                 </View>
@@ -1164,12 +1628,14 @@ export default function Home() {
                       ) : (
                         adminComplaints.map(comp => (
                           <View key={comp.id} style={[styles.adminListItem, { borderColor: colors.border }]}>
-                            <View style={styles.complaintTopRow}>
-                              <Text style={[styles.adminItemTitle, { color: colors.text }]}>
+                            <View style={{ marginBottom: 6 }}>
+                              <Text style={[styles.adminItemTitle, { color: colors.text, marginBottom: 6 }]}>
                                 {comp.course_title || 'Khóa học'}
                               </Text>
-                              <View style={styles.badgeDanger}>
-                                <Text style={styles.badgeDangerText}>{comp.reason}</Text>
+                              <View style={[styles.badgeDanger, { backgroundColor: darkMode ? 'rgba(239, 68, 68, 0.2)' : '#fee2e2' }]}>
+                                <Text style={[styles.badgeDangerText, { color: darkMode ? '#fca5a5' : '#b91c1c' }]}>
+                                  {comp.reason}
+                                </Text>
                               </View>
                             </View>
                             <Text style={[styles.adminItemDesc, { color: colors.text }]}>
@@ -1289,7 +1755,6 @@ export default function Home() {
                 {/* Search Bar Row with Sort & Filter Button on Right */}
                 <View style={styles.searchBarRow}>
                   <View style={[styles.searchContainer, { backgroundColor: colors.card, borderColor: colors.border, flex: 1 }]}>
-                    <Text style={styles.searchIcon}>🔍</Text>
                     <TextInput
                       style={[styles.searchInput, { color: colors.text }]}
                       value={search}
@@ -1353,7 +1818,7 @@ export default function Home() {
                         onPress={() => setStarFilter('all')}
                       >
                         <Text style={[styles.activeFilterPillText, { color: colors.text }]}>
-                          Số sao: ≥ {starFilter} ⭐ ✕
+                          Số sao: ≥ {starFilter} sao ✕
                         </Text>
                       </TouchableOpacity>
                     )}
@@ -1608,16 +2073,16 @@ export default function Home() {
                                 </Text>
                               </TouchableOpacity>
 
-                              {/* Heart Like */}
+                              {/* Like Button */}
                               <TouchableOpacity
                                 style={[styles.likeButton, { backgroundColor: colors.cardElevated, borderColor: colors.border }]}
                                 onPress={() => handleToggleLike(course.id)}
                               >
-                                <Text style={[styles.likeHeart, course.user_liked && styles.likeHeartActive]}>
-                                  {course.user_liked ? '♥' : '♡'}
+                                <Text style={[styles.likeHeart, { color: course.user_liked ? colors.primary : colors.textMuted }]}>
+                                  {course.user_liked ? 'Đã thích' : 'Thích'}
                                 </Text>
                                 <Text style={[styles.likeCount, { color: colors.textMuted }]}>
-                                  {course.like_count || 0}
+                                  ({course.like_count || 0})
                                 </Text>
                               </TouchableOpacity>
                             </View>
@@ -1630,17 +2095,15 @@ export default function Home() {
 
                             <View style={[styles.courseFooter, { borderTopColor: colors.border }]}>
                               <View style={styles.instructorTag}>
-                                <Text style={styles.instructorIcon}>👤</Text>
                                 <Text style={[styles.instructorName, { color: colors.textMuted }]} numberOfLines={1}>
-                                  {course.instructor_name || 'Giảng viên LMS'}
+                                  Giảng viên: {course.instructor_name || 'LMS'}
                                 </Text>
                               </View>
 
                               <View style={styles.ratingBadge}>
-                                <Text style={styles.ratingStar}>★</Text>
                                 <Text style={[styles.ratingScore, { color: colors.text }]}>
                                   {course.avg_rating && course.avg_rating > 0
-                                    ? course.avg_rating.toFixed(1)
+                                    ? `${course.avg_rating.toFixed(1)}/5`
                                     : 'Mới'}
                                 </Text>
                                 {course.review_count && course.review_count > 0 ? (
@@ -1649,11 +2112,11 @@ export default function Home() {
                               </View>
                             </View>
 
-                            {/* INSTRUCTOR ACTIONS: Edit & Manage */}
+                            {/* INSTRUCTOR ACTIONS: Edit, Share, Archive, Delete */}
                             {activeRoleMode === 'INSTRUCTOR' && isOwner && (
-                              <View style={styles.instructorCardActions}>
+                              <View style={[styles.instructorCardActions, { borderTopColor: colors.border }]}>
                                 <TouchableOpacity
-                                  style={styles.editCourseBtn}
+                                  style={{ paddingVertical: 4 }}
                                   onPress={() =>
                                     router.push({
                                       pathname: '/course/edit/[id]',
@@ -1661,10 +2124,55 @@ export default function Home() {
                                     })
                                   }
                                 >
-                                  <Text style={styles.editCourseBtnText}>
-                                    ✏️ Chỉnh sửa bài giảng & khóa học
+                                  <Text style={[styles.instructorActionText, { color: colors.primary }]}>
+                                    {course.is_locked ? 'Xem khóa học (Đang bị khóa)' : 'Quản lý bài giảng'}
                                   </Text>
                                 </TouchableOpacity>
+
+                                <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+                                  <TouchableOpacity
+                                    style={{ paddingVertical: 4 }}
+                                    onPress={() => void handleShareCourse(course)}
+                                  >
+                                    <Text style={[styles.instructorActionText, { color: colors.primary }]}>
+                                      Chia sẻ
+                                    </Text>
+                                  </TouchableOpacity>
+
+                                  {!course.is_locked && course.status === 'PUBLISHED' && (
+                                    <TouchableOpacity
+                                      style={{ paddingVertical: 4 }}
+                                      onPress={() => {
+                                        setCourseActionTarget({ course, action: 'ARCHIVE' });
+                                        setCourseActionApplyMode('immediate');
+                                        setCourseActionScheduledAt('');
+                                        setCourseActionScheduledUntil('');
+                                        setCourseActionReason('');
+                                      }}
+                                    >
+                                      <Text style={[styles.instructorActionText, { color: '#d97706' }]}>
+                                        Ngừng xuất bản
+                                      </Text>
+                                    </TouchableOpacity>
+                                  )}
+
+                                  {!course.is_locked && (
+                                    <TouchableOpacity
+                                      style={{ paddingVertical: 4 }}
+                                      onPress={() => {
+                                        setCourseActionTarget({ course, action: 'DELETE' });
+                                        setCourseActionApplyMode('immediate');
+                                        setCourseActionScheduledAt('');
+                                        setCourseActionScheduledUntil('');
+                                        setCourseActionReason('');
+                                      }}
+                                    >
+                                      <Text style={[styles.instructorActionText, { color: '#dc2626' }]}>
+                                        Xóa
+                                      </Text>
+                                    </TouchableOpacity>
+                                  )}
+                                </View>
                               </View>
                             )}
                           </View>
@@ -1679,26 +2187,31 @@ export default function Home() {
         )}
       </ScrollView>
 
-      {/* MODAL 1: HIGH PRIORITY BROADCAST POPOVER IN CENTER OF SCREEN */}
+      {/* MODAL 1: HIGH PRIORITY BROADCAST POPOVER IN CENTER OF SCREEN (ADAPTIVE BLUR DARK/LIGHT) */}
       {activeAnnouncement && (
         <Modal visible transparent animationType="fade">
-          <View style={styles.priorityModalBackdrop}>
-            <View style={styles.priorityModalCard}>
+          <View style={[styles.priorityModalBackdrop, { backgroundColor: glassBackdrop }]}>
+            <View style={[styles.priorityModalCard, { backgroundColor: glassCardBg, borderColor: glassCardBorder, borderWidth: 1 }]}>
               <View style={styles.priorityModalHeader}>
-                <Text style={styles.priorityModalBadge}>THÔNG BÁO TỪ QUẢN TRỊ VIÊN</Text>
-                <View style={styles.countdownBadge}>
-                  <Text style={styles.countdownBadgeText}>
+                <Text style={[styles.priorityModalBadge, { color: darkMode ? '#f87171' : '#dc2626' }]}>
+                  THÔNG BÁO TỪ QUẢN TRỊ VIÊN
+                </Text>
+                <View style={[styles.countdownBadge, { backgroundColor: darkMode ? 'rgba(239, 68, 68, 0.2)' : '#fee2e2' }]}>
+                  <Text style={[styles.countdownBadgeText, { color: darkMode ? '#fca5a5' : '#dc2626' }]}>
                     Tự đóng sau {announcementCountdown}s
                   </Text>
                 </View>
               </View>
 
-              <Text style={styles.priorityModalTitle}>{activeAnnouncement.title}</Text>
+              <Text style={[styles.priorityModalTitle, { color: colors.text }]}>{activeAnnouncement.title}</Text>
               <ScrollView style={{ maxHeight: 220, marginVertical: 8 }}>
-                <Text style={styles.priorityModalBody}>{activeAnnouncement.message}</Text>
+                <Text style={[styles.priorityModalBody, { color: colors.textSecondary }]}>{activeAnnouncement.message}</Text>
               </ScrollView>
 
-              <TouchableOpacity style={styles.closePriorityBtn} onPress={handleCloseAnnouncement}>
+              <TouchableOpacity
+                style={[styles.closePriorityBtn, { backgroundColor: colors.primary }]}
+                onPress={handleCloseAnnouncement}
+              >
                 <Text style={styles.closePriorityBtnText}>Đã hiểu & Đóng thông báo</Text>
               </TouchableOpacity>
             </View>
@@ -1709,7 +2222,7 @@ export default function Home() {
       {/* MODAL 2: USER PROFILE POPOVER & ROLE SWITCHER */}
       <Modal visible={showProfileMenu} transparent animationType="fade">
         <TouchableOpacity
-          style={styles.modalOverlay}
+          style={[styles.modalOverlay, { backgroundColor: glassBackdrop }]}
           activeOpacity={1}
           onPress={() => setShowProfileMenu(false)}
         >
@@ -1734,13 +2247,15 @@ export default function Home() {
             <View style={[styles.menuDivider, { borderBottomColor: colors.border }]} />
 
             {/* Switch Role Options */}
-            <Text style={[styles.menuSectionHeader, { color: colors.textMuted }]}>CHUYỂN ĐỔI KHÔNG GIAN</Text>
+            <Text style={[styles.menuSectionHeader, { color: colors.textMuted }]}>CHUYỂN ĐỔI VAI TRÒ</Text>
 
             <TouchableOpacity
               style={[styles.menuOptionBtn, activeRoleMode === 'STUDENT' && styles.menuOptionBtnActive]}
               onPress={() => handleSwitchRole('STUDENT')}
             >
-              <Text style={styles.menuOptionBtnText}>👨‍🎓 Không gian Học viên</Text>
+              <Text style={styles.menuOptionBtnText}>
+                {activeRoleMode === 'STUDENT' ? 'Chế độ Học viên (Đang chọn)' : 'Chuyển sang Học viên'}
+              </Text>
             </TouchableOpacity>
 
             {isInstructor ? (
@@ -1748,7 +2263,9 @@ export default function Home() {
                 style={[styles.menuOptionBtn, activeRoleMode === 'INSTRUCTOR' && styles.menuOptionBtnActive]}
                 onPress={() => handleSwitchRole('INSTRUCTOR')}
               >
-                <Text style={styles.menuOptionBtnText}>👨‍🏫 Không gian Giảng viên</Text>
+                <Text style={styles.menuOptionBtnText}>
+                  {activeRoleMode === 'INSTRUCTOR' ? 'Chế độ Giảng viên (Đang chọn)' : 'Chuyển sang Giảng viên'}
+                </Text>
               </TouchableOpacity>
             ) : (
               <TouchableOpacity
@@ -1764,7 +2281,9 @@ export default function Home() {
                 style={[styles.menuOptionBtn, activeRoleMode === 'ADMIN' && styles.menuOptionBtnActive]}
                 onPress={() => handleSwitchRole('ADMIN')}
               >
-                <Text style={styles.menuOptionBtnText}>🛡️ Bảng Quản trị Hệ thống</Text>
+                <Text style={styles.menuOptionBtnText}>
+                  {activeRoleMode === 'ADMIN' ? 'Chế độ Quản trị viên (Đang chọn)' : 'Chuyển sang Quản trị viên'}
+                </Text>
               </TouchableOpacity>
             )}
 
@@ -1792,7 +2311,7 @@ export default function Home() {
 
       {/* MODAL 3: INSTRUCTOR COURSE CREATOR */}
       <Modal visible={showCreateCourseModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
+        <View style={[styles.modalOverlay, { backgroundColor: glassBackdrop }]}>
           <ScrollView style={[styles.createCourseCard, { backgroundColor: colors.card }]}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>Tạo khóa học mới</Text>
             <Text style={[styles.modalSubtitle, { color: colors.textMuted }]}>
@@ -1882,15 +2401,85 @@ export default function Home() {
               </View>
             )}
 
+            {/* Thumbnail Upload (No URL) */}
             <View style={styles.inputGroup}>
-              <Text style={[styles.label, { color: colors.text }]}>URL ảnh bìa khóa học:</Text>
-              <TextInput
-                style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
-                placeholder="https://example.com/thumbnail.jpg"
-                placeholderTextColor="#9ca3af"
-                value={newCourseThumbnail}
-                onChangeText={setNewCourseThumbnail}
-              />
+              <Text style={[styles.label, { color: colors.text }]}>Ảnh bìa khóa học:</Text>
+              {newCourseThumbnail ? (
+                <View style={{ marginTop: 4 }}>
+                  <Image
+                    source={{ uri: newCourseThumbnail }}
+                    style={{ width: '100%', height: 140, borderRadius: 10, marginBottom: 8 }}
+                    resizeMode="cover"
+                  />
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <TouchableOpacity
+                      style={{
+                        flex: 1,
+                        paddingVertical: 9,
+                        borderRadius: 8,
+                        borderWidth: 1,
+                        borderColor: colors.primary,
+                        backgroundColor: colors.primaryLight,
+                        alignItems: 'center',
+                      }}
+                      onPress={async () => {
+                        try {
+                          const dataUrl = await pickCourseThumbnailImage();
+                          if (dataUrl) setNewCourseThumbnail(dataUrl);
+                        } catch (e) {
+                          setMessage(e instanceof Error ? e.message : 'Không thể đọc ảnh đã chọn.');
+                        }
+                      }}
+                    >
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: colors.primary }}>Đổi ảnh khác</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={{
+                        paddingHorizontal: 14,
+                        paddingVertical: 9,
+                        borderRadius: 8,
+                        borderWidth: 1,
+                        borderColor: 'rgba(239, 68, 68, 0.4)',
+                        backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                        alignItems: 'center',
+                      }}
+                      onPress={() => setNewCourseThumbnail('')}
+                    >
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#ef4444' }}>Xóa ảnh</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={{
+                    marginTop: 4,
+                    paddingVertical: 18,
+                    paddingHorizontal: 14,
+                    borderRadius: 10,
+                    borderWidth: 1,
+                    borderStyle: 'dashed',
+                    borderColor: colors.primary,
+                    backgroundColor: colors.cardElevated,
+                    alignItems: 'center',
+                    gap: 4,
+                  }}
+                  onPress={async () => {
+                    try {
+                      const dataUrl = await pickCourseThumbnailImage();
+                      if (dataUrl) setNewCourseThumbnail(dataUrl);
+                    } catch (e) {
+                      setMessage(e instanceof Error ? e.message : 'Không thể đọc ảnh đã chọn.');
+                    }
+                  }}
+                >
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: colors.primary }}>
+                    Tải ảnh bìa lên từ điện thoại
+                  </Text>
+                  <Text style={{ fontSize: 11, color: colors.textMuted }}>
+                    PNG, JPG, WebP tối đa 12MB
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
 
             <View style={styles.inputGroup}>
@@ -1926,7 +2515,7 @@ export default function Home() {
 
       {/* MODAL: SORT & FILTER */}
       <Modal visible={showSortFilterModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
+        <View style={[styles.modalOverlay, { backgroundColor: glassBackdrop }]}>
           <ScrollView style={[styles.createCourseCard, { backgroundColor: colors.card, maxHeight: '80%' }]}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>Sắp xếp & Bộ lọc khóa học</Text>
@@ -2075,7 +2664,7 @@ export default function Home() {
 
       {/* MODAL 4: ADMIN RESOLVE COMPLAINT */}
       <Modal visible={Boolean(resolvingComplaint)} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
+        <View style={[styles.modalOverlay, { backgroundColor: glassBackdrop }]}>
           <View style={[styles.adminModalCard, { backgroundColor: colors.card }]}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>Xử lý khiếu nại</Text>
             <Text style={[styles.modalSubtitle, { color: colors.textMuted }]}>
@@ -2144,7 +2733,7 @@ export default function Home() {
 
       {/* MODAL 5: NOTIFICATIONS CENTER */}
       <Modal visible={showNotifModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
+        <View style={[styles.modalOverlay, { backgroundColor: glassBackdrop }]}>
           <View style={[styles.notifModalCard, { backgroundColor: colors.card }]}>
             <View style={styles.notifModalHeader}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>Thông báo hệ thống</Text>
@@ -2174,7 +2763,7 @@ export default function Home() {
 
       {/* MODAL 6: SERVER IP CONFIG */}
       <Modal visible={showServerModal} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
+        <View style={[styles.modalOverlay, { backgroundColor: glassBackdrop }]}>
           <View style={[styles.serverModalCard, { backgroundColor: colors.card }]}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>Cấu hình máy chủ API</Text>
             <Text style={[styles.modalSubtitle, { color: colors.textMuted }]}>
@@ -2208,11 +2797,600 @@ export default function Home() {
           </View>
         </View>
       </Modal>
+      {/* MODAL 7: INSTRUCTOR COURSE ACTION MODAL (ARCHIVE / DELETE) MATCHING WEB SCREENSHOT 7 */}
+      <Modal
+        visible={Boolean(courseActionTarget)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCourseActionTarget(null)}
+      >
+        <View style={[styles.modalOverlay, { backgroundColor: glassBackdrop }]}>
+          <View style={[styles.serverModalCard, { backgroundColor: colors.card, maxHeight: '90%' }]}>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>
+                {courseActionTarget?.action === 'ARCHIVE'
+                  ? 'Ngưng xuất bản / Lưu trữ khóa học'
+                  : 'Xóa khóa học'}
+              </Text>
+              <Text style={[styles.modalSubtitle, { color: colors.textMuted, fontSize: 13, lineHeight: 19, marginBottom: 14 }]}>
+                {courseActionTarget?.action === 'ARCHIVE'
+                  ? `Khóa học "${courseActionTarget.course.title}" sẽ chuyển sang trạng thái Lưu trữ. Bạn có thể chọn ngưng ngay hoặc lên lịch theo khoảng thời gian.`
+                  : `Bạn có chắc muốn xóa khóa học "${courseActionTarget?.course.title}"? Thao tác có thể áp dụng ngay hoặc lên lịch kèm lý do.`}
+              </Text>
+
+              {/* Radio options: strictly 2 options for DELETE (matching Screenshot 7) */}
+              <View style={{ gap: 8, marginBottom: 12 }}>
+                {(courseActionTarget?.action === 'DELETE'
+                  ? ([
+                      ['immediate', 'Áp dụng ngay lập tức'],
+                      ['scheduled', 'Lên lịch theo ngày giờ'],
+                    ] as const)
+                  : ([
+                      ['immediate', 'Áp dụng ngay lập tức'],
+                      ['scheduled', 'Lên lịch theo ngày giờ'],
+                      ['range', 'Tạm ngừng theo khoảng thời gian'],
+                    ] as const)
+                ).map(([modeKey, modeLabel]) => {
+                  const selected = courseActionApplyMode === modeKey;
+                  return (
+                    <TouchableOpacity
+                      key={modeKey}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        paddingVertical: 12,
+                        paddingHorizontal: 14,
+                        borderRadius: 10,
+                        borderWidth: 1,
+                        borderColor: selected ? colors.primary : colors.border,
+                        backgroundColor: selected ? colors.primaryLight : colors.cardElevated,
+                      }}
+                      onPress={() => {
+                        setCourseActionApplyMode(modeKey);
+                      }}
+                    >
+                      <Text style={{ fontSize: 13.5, fontWeight: '700', color: colors.text }}>
+                        {modeLabel}
+                      </Text>
+                      <View
+                        style={{
+                          width: 20,
+                          height: 20,
+                          borderRadius: 10,
+                          borderWidth: 2,
+                          borderColor: selected ? colors.primary : colors.textMuted,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        {selected && (
+                          <View
+                            style={{
+                              width: 10,
+                              height: 10,
+                              borderRadius: 5,
+                              backgroundColor: colors.primary,
+                            }}
+                          />
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {courseActionApplyMode === 'scheduled' && (
+                <View style={styles.inputGroup}>
+                  <Text style={[styles.label, { color: colors.text }]}>
+                    Thời gian thực hiện (YYYY-MM-DDTHH:mm):
+                  </Text>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text },
+                    ]}
+                    placeholder="Ví dụ: 2026-10-30T10:00"
+                    placeholderTextColor={colors.textMuted}
+                    value={courseActionScheduledAt}
+                    onChangeText={setCourseActionScheduledAt}
+                  />
+                </View>
+              )}
+
+              {courseActionApplyMode === 'range' && courseActionTarget?.action !== 'DELETE' && (
+                <>
+                  <View style={styles.inputGroup}>
+                    <Text style={[styles.label, { color: colors.text }]}>
+                      Tạm ngừng từ ngày (YYYY-MM-DDTHH:mm):
+                    </Text>
+                    <TextInput
+                      style={[
+                        styles.input,
+                        { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text },
+                      ]}
+                      placeholder="Ví dụ: 2026-10-30T10:00"
+                      placeholderTextColor={colors.textMuted}
+                      value={courseActionScheduledAt}
+                      onChangeText={setCourseActionScheduledAt}
+                    />
+                  </View>
+                  <View style={styles.inputGroup}>
+                    <Text style={[styles.label, { color: colors.text }]}>
+                      Đến ngày hoàn tác (YYYY-MM-DDTHH:mm):
+                    </Text>
+                    <TextInput
+                      style={[
+                        styles.input,
+                        { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text },
+                      ]}
+                      placeholder="Ví dụ: 2026-11-15T10:00"
+                      placeholderTextColor={colors.textMuted}
+                      value={courseActionScheduledUntil}
+                      onChangeText={setCourseActionScheduledUntil}
+                    />
+                  </View>
+                </>
+              )}
+
+              {/* Thông báo kèm lý do (tùy chọn) - khớp Web Screenshot 7 */}
+              <View style={styles.inputGroup}>
+                <Text style={[styles.label, { color: colors.text }]}>
+                  Thông báo kèm lý do thực hiện (tùy chọn):
+                </Text>
+                <TextInput
+                  style={[
+                    styles.input,
+                    {
+                      backgroundColor: colors.inputBg,
+                      borderColor: colors.inputBorder,
+                      color: colors.text,
+                      minHeight: 70,
+                      textAlignVertical: 'top',
+                    },
+                  ]}
+                  multiline
+                  numberOfLines={3}
+                  placeholder="Nhập lý do ngưng xuất bản hoặc xóa khóa học để thông báo cho học viên..."
+                  placeholderTextColor={colors.textMuted}
+                  value={courseActionReason}
+                  onChangeText={setCourseActionReason}
+                />
+              </View>
+
+              <View style={styles.modalActionsRow}>
+                <TouchableOpacity
+                  style={[styles.modalCancelBtn, { backgroundColor: colors.cardElevated }]}
+                  onPress={() => setCourseActionTarget(null)}
+                  disabled={busy}
+                >
+                  <Text style={[styles.modalCancelBtnText, { color: colors.text }]}>Hủy bỏ</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.modalPrimaryBtn,
+                    {
+                      backgroundColor: courseActionTarget?.action === 'DELETE' ? '#dc2626' : '#d97706',
+                    },
+                  ]}
+                  onPress={() => void handleExecuteCourseAction()}
+                  disabled={busy}
+                >
+                  <Text style={styles.modalPrimaryBtnText}>
+                    {busy
+                      ? 'Đang xử lý...'
+                      : courseActionTarget?.action === 'DELETE'
+                      ? 'Xác nhận Xóa'
+                      : 'Xác nhận Lưu trữ'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL 8: KHÓA TÀI KHOẢN (LOCK USER) - MATCHING WEB SCREENSHOT 4 */}
+      <Modal
+        visible={Boolean(lockingUser)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setLockingUser(null)}
+      >
+        <View style={[styles.modalOverlay, { backgroundColor: glassBackdrop }]}>
+          <View style={[styles.serverModalCard, { backgroundColor: colors.card, maxHeight: '90%' }]}>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>
+                Khóa tài khoản: {lockingUser?.display_name}
+              </Text>
+              <Text style={[styles.modalSubtitle, { color: colors.textMuted, fontSize: 13, lineHeight: 19, marginBottom: 14 }]}>
+                {lockingUser?.email} · Người dùng sẽ bị thu hồi phiên đăng nhập ngay lập tức.
+              </Text>
+
+              {/* Radio options: indefinite / days / range */}
+              <View style={{ gap: 8, marginBottom: 12 }}>
+                {[
+                  ['indefinite', 'Khóa vĩnh viễn (Vô thời hạn)'],
+                  ['days', 'Khóa theo số ngày'],
+                  ['range', 'Khóa từ ngày đến ngày'],
+                ].map(([modeKey, modeLabel]) => {
+                  const selected = userLockMode === modeKey;
+                  return (
+                    <TouchableOpacity
+                      key={modeKey}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        paddingVertical: 12,
+                        paddingHorizontal: 14,
+                        borderRadius: 10,
+                        borderWidth: 1,
+                        borderColor: selected ? colors.primary : colors.border,
+                        backgroundColor: selected ? colors.primaryLight : colors.cardElevated,
+                      }}
+                      onPress={() => setUserLockMode(modeKey as any)}
+                    >
+                      <Text style={{ fontSize: 13.5, fontWeight: '700', color: colors.text }}>
+                        {modeLabel}
+                      </Text>
+                      <View
+                        style={{
+                          width: 20,
+                          height: 20,
+                          borderRadius: 10,
+                          borderWidth: 2,
+                          borderColor: selected ? colors.primary : colors.textMuted,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        {selected && (
+                          <View
+                            style={{
+                              width: 10,
+                              height: 10,
+                              borderRadius: 5,
+                              backgroundColor: colors.primary,
+                            }}
+                          />
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {userLockMode === 'days' && (
+                <View style={styles.inputGroup}>
+                  <Text style={[styles.label, { color: colors.text }]}>Số ngày khóa tài khoản:</Text>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
+                    keyboardType="number-pad"
+                    placeholder="7"
+                    placeholderTextColor={colors.textMuted}
+                    value={userLockDays}
+                    onChangeText={setUserLockDays}
+                  />
+                </View>
+              )}
+
+              {userLockMode === 'range' && (
+                <>
+                  <View style={styles.inputGroup}>
+                    <Text style={[styles.label, { color: colors.text }]}>Từ ngày (YYYY-MM-DD):</Text>
+                    <TextInput
+                      style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
+                      placeholder="Ví dụ: 2026-10-30"
+                      placeholderTextColor={colors.textMuted}
+                      value={userLockFrom}
+                      onChangeText={setUserLockFrom}
+                    />
+                  </View>
+                  <View style={styles.inputGroup}>
+                    <Text style={[styles.label, { color: colors.text }]}>Đến ngày (YYYY-MM-DD):</Text>
+                    <TextInput
+                      style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
+                      placeholder="Ví dụ: 2026-11-15"
+                      placeholderTextColor={colors.textMuted}
+                      value={userLockUntil}
+                      onChangeText={setUserLockUntil}
+                    />
+                  </View>
+                </>
+              )}
+
+              <View style={styles.inputGroup}>
+                <Text style={[styles.label, { color: colors.text }]}>
+                  Lý do khóa tài khoản (hiển thị khi người dùng đăng nhập):
+                </Text>
+                <TextInput
+                  style={[
+                    styles.input,
+                    {
+                      backgroundColor: colors.inputBg,
+                      borderColor: colors.inputBorder,
+                      color: colors.text,
+                      minHeight: 80,
+                      textAlignVertical: 'top',
+                    },
+                  ]}
+                  multiline
+                  numberOfLines={3}
+                  placeholder="Ví dụ: Vi phạm quy chế học tập, đăng tải nội dung không phù hợp..."
+                  placeholderTextColor={colors.textMuted}
+                  value={userLockReason}
+                  onChangeText={setUserLockReason}
+                />
+              </View>
+
+              <View style={styles.modalActionsRow}>
+                <TouchableOpacity
+                  style={[styles.modalCancelBtn, { backgroundColor: colors.cardElevated }]}
+                  onPress={() => setLockingUser(null)}
+                  disabled={busy}
+                >
+                  <Text style={[styles.modalCancelBtnText, { color: colors.text }]}>Hủy</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.modalPrimaryBtn, { backgroundColor: '#dc2626' }]}
+                  onPress={() => void submitLockUser()}
+                  disabled={busy}
+                >
+                  <Text style={styles.modalPrimaryBtnText}>
+                    {busy ? 'Đang xử lý...' : 'Xác nhận khóa'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL 9: KHÓA KHÓA HỌC (LOCK COURSE) - MATCHING WEB */}
+      <Modal
+        visible={Boolean(lockingCourse)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setLockingCourse(null)}
+      >
+        <View style={[styles.modalOverlay, { backgroundColor: glassBackdrop }]}>
+          <View style={[styles.serverModalCard, { backgroundColor: colors.card, maxHeight: '90%' }]}>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>
+                Khóa khóa học: {lockingCourse?.title}
+              </Text>
+              <Text style={[styles.modalSubtitle, { color: colors.textMuted, fontSize: 13, lineHeight: 19, marginBottom: 14 }]}>
+                Khóa học sẽ bị tạm dừng đăng ký, học tập và xem video ngay lập tức.
+              </Text>
+
+              {/* Radio options: indefinite / days / range */}
+              <View style={{ gap: 8, marginBottom: 12 }}>
+                {[
+                  ['indefinite', 'Khóa vĩnh viễn (Vô thời hạn)'],
+                  ['days', 'Khóa theo số ngày'],
+                  ['range', 'Khóa từ ngày đến ngày'],
+                ].map(([modeKey, modeLabel]) => {
+                  const selected = courseLockMode === modeKey;
+                  return (
+                    <TouchableOpacity
+                      key={modeKey}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        paddingVertical: 12,
+                        paddingHorizontal: 14,
+                        borderRadius: 10,
+                        borderWidth: 1,
+                        borderColor: selected ? colors.primary : colors.border,
+                        backgroundColor: selected ? colors.primaryLight : colors.cardElevated,
+                      }}
+                      onPress={() => setCourseLockMode(modeKey as any)}
+                    >
+                      <Text style={{ fontSize: 13.5, fontWeight: '700', color: colors.text }}>
+                        {modeLabel}
+                      </Text>
+                      <View
+                        style={{
+                          width: 20,
+                          height: 20,
+                          borderRadius: 10,
+                          borderWidth: 2,
+                          borderColor: selected ? colors.primary : colors.textMuted,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        {selected && (
+                          <View
+                            style={{
+                              width: 10,
+                              height: 10,
+                              borderRadius: 5,
+                              backgroundColor: colors.primary,
+                            }}
+                          />
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {courseLockMode === 'days' && (
+                <View style={styles.inputGroup}>
+                  <Text style={[styles.label, { color: colors.text }]}>Số ngày khóa khóa học:</Text>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
+                    keyboardType="number-pad"
+                    placeholder="7"
+                    placeholderTextColor={colors.textMuted}
+                    value={courseLockDays}
+                    onChangeText={setCourseLockDays}
+                  />
+                </View>
+              )}
+
+              {courseLockMode === 'range' && (
+                <>
+                  <View style={styles.inputGroup}>
+                    <Text style={[styles.label, { color: colors.text }]}>Từ ngày (YYYY-MM-DD):</Text>
+                    <TextInput
+                      style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
+                      placeholder="Ví dụ: 2026-10-30"
+                      placeholderTextColor={colors.textMuted}
+                      value={courseLockFrom}
+                      onChangeText={setCourseLockFrom}
+                    />
+                  </View>
+                  <View style={styles.inputGroup}>
+                    <Text style={[styles.label, { color: colors.text }]}>Đến ngày (YYYY-MM-DD):</Text>
+                    <TextInput
+                      style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
+                      placeholder="Ví dụ: 2026-11-15"
+                      placeholderTextColor={colors.textMuted}
+                      value={courseLockUntil}
+                      onChangeText={setCourseLockUntil}
+                    />
+                  </View>
+                </>
+              )}
+
+              <View style={styles.inputGroup}>
+                <Text style={[styles.label, { color: colors.text }]}>
+                  Lý do khóa khóa học (hiển thị khi học viên mở khóa học):
+                </Text>
+                <TextInput
+                  style={[
+                    styles.input,
+                    {
+                      backgroundColor: colors.inputBg,
+                      borderColor: colors.inputBorder,
+                      color: colors.text,
+                      minHeight: 80,
+                      textAlignVertical: 'top',
+                    },
+                  ]}
+                  multiline
+                  numberOfLines={3}
+                  placeholder="Ví dụ: Tạm khóa bởi Quản trị viên để kiểm duyệt nội dung..."
+                  placeholderTextColor={colors.textMuted}
+                  value={courseLockReason}
+                  onChangeText={setCourseLockReason}
+                />
+              </View>
+
+              <View style={styles.modalActionsRow}>
+                <TouchableOpacity
+                  style={[styles.modalCancelBtn, { backgroundColor: colors.cardElevated }]}
+                  onPress={() => setLockingCourse(null)}
+                  disabled={busy}
+                >
+                  <Text style={[styles.modalCancelBtnText, { color: colors.text }]}>Hủy</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.modalPrimaryBtn, { backgroundColor: '#dc2626' }]}
+                  onPress={() => void submitLockCourse()}
+                  disabled={busy}
+                >
+                  <Text style={styles.modalPrimaryBtnText}>
+                    {busy ? 'Đang xử lý...' : 'Xác nhận khóa'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
+  hamburgerBtn: {
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  hamburgerIcon: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  notifLabelText: {
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  drawerOverlay: {
+    flex: 1,
+    flexDirection: 'row',
+  },
+  drawerBackdrop: {
+    flex: 1,
+  },
+  drawerContent: {
+    width: 290,
+    height: '100%',
+    paddingHorizontal: 18,
+    paddingTop: Platform.OS === 'ios' ? 48 : 36,
+    paddingBottom: 24,
+    borderRightWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 4, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 16,
+  },
+  drawerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+  },
+  drawerBrand: {
+    fontSize: 17,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  drawerSubtitle: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  drawerCloseBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  drawerNavGroupTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  drawerNavItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginBottom: 4,
+  },
+  drawerNavItemText: {
+    fontSize: 13.5,
+    fontWeight: '600',
+  },
+  drawerDivider: {
+    borderBottomWidth: 1,
+    marginVertical: 12,
+  },
+
   screen: {
     flex: 1,
   },
@@ -2674,6 +3852,15 @@ const styles = StyleSheet.create({
     paddingTop: 6,
     borderTopWidth: 1,
     borderTopColor: '#f1f5f9',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  instructorActionText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   editCourseBtn: {
     backgroundColor: '#ecfdf5',
@@ -2750,17 +3937,21 @@ const styles = StyleSheet.create({
   complaintTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 4,
   },
   badgeDanger: {
     backgroundColor: '#fee2e2',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
   },
   badgeDangerText: {
     color: '#b91c1c',
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '700',
   },
   resolveBtn: {
@@ -2838,7 +4029,7 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(2, 6, 23, 0.92)',
     justifyContent: 'center',
     padding: 16,
   },
@@ -2949,7 +4140,6 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   priorityModalCard: {
-    backgroundColor: '#ffffff',
     borderRadius: 16,
     padding: 20,
     width: '100%',

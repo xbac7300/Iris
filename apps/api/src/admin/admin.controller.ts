@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, HttpCode, NotFoundException, Param, ParseUUIDPipe, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, HttpCode, NotFoundException, OnModuleInit, Param, ParseUUIDPipe, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiNoContentResponse, ApiOkResponse, ApiProperty, ApiPropertyOptional, ApiTags } from '@nestjs/swagger';
 import { IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
 import { randomUUID } from 'node:crypto';
@@ -11,6 +11,7 @@ export class AdminUserDto {
   @ApiProperty() email!: string;
   @ApiProperty() display_name!: string;
   @ApiProperty() disabled!: boolean;
+  @ApiPropertyOptional({ type: String, nullable: true }) disabled_from?: string | null;
   @ApiPropertyOptional({ type: String, nullable: true }) disabled_until?: string | null;
   @ApiPropertyOptional({ type: String, nullable: true }) disabled_reason?: string | null;
   @ApiProperty({ type: [String] }) roles!: string[];
@@ -55,6 +56,28 @@ export class ResolveComplaintDto {
   @IsOptional()
   @IsString()
   admin_notes?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  days?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  locked_from?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  locked_until?: string;
+}
+
+export class LockCourseDto {
+  @ApiPropertyOptional() @IsOptional() @IsString() reason?: string;
+  @ApiPropertyOptional() @IsOptional() @IsInt() days?: number;
+  @ApiPropertyOptional() @IsOptional() @IsString() locked_from?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() locked_until?: string;
 }
 
 export class AnnouncementDto {
@@ -86,16 +109,30 @@ export class NotificationDto {
 @ApiBearerAuth()
 @UseGuards(AuthGuard)
 @Controller('admin')
-export class AdminController {
+export class AdminController implements OnModuleInit {
   constructor(private readonly db: DataSource) {}
+
+  async onModuleInit(): Promise<void> {
+    await this.db.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS disabled_from TIMESTAMPTZ NULL').catch(() => {});
+  }
+
+  private async autoClearExpiredLocks(): Promise<void> {
+    await this.db.query(
+      'UPDATE users SET disabled=false, disabled_from=NULL, disabled_until=NULL, disabled_reason=NULL WHERE disabled=true AND disabled_until IS NOT NULL AND disabled_until <= now()'
+    ).catch(() => {});
+    await this.db.query(
+      "UPDATE courses SET status='PUBLISHED', is_locked=FALSE, locked_at=NULL, locked_reason=NULL, locked_by=NULL, scheduled_until=NULL, action_reason=NULL, updated_at=now() WHERE is_locked=TRUE AND scheduled_until IS NOT NULL AND scheduled_until <= now()"
+    ).catch(() => {});
+  }
 
   @Get('users')
   @ApiOkResponse({ type: [AdminUserDto] })
   async users(@Query() page: PageDto, @Req() request: AuthRequest): Promise<AdminUserDto[]> {
     if (!request.principal.roles.includes('ADMIN')) throw new ForbiddenException('Cần quyền quản trị.');
+    await this.autoClearExpiredLocks();
     const rows = await this.db.query(
       `SELECT u.id, u.email, u.display_name, u.disabled,
-              u.disabled_until, u.disabled_reason,
+              u.disabled_from, u.disabled_until, u.disabled_reason,
               array_agg(r.role ORDER BY r.role) as roles
        FROM users u
        JOIN user_roles r ON r.user_id = u.id
@@ -103,10 +140,15 @@ export class AdminController {
        ORDER BY u.created_at DESC LIMIT $1 OFFSET $2`,
       [page.limit, page.offset]
     );
-    return rows.map((r: any) => ({
-      ...r,
-      disabled_until: r.disabled_until ? new Date(r.disabled_until).toISOString() : null,
-      disabled_reason: r.disabled_reason || null,
+    return rows.map((r: Record<string, unknown>) => ({
+      id: String(r.id),
+      email: String(r.email),
+      display_name: String(r.display_name),
+      disabled: Boolean(r.disabled),
+      roles: Array.isArray(r.roles) ? (r.roles as string[]) : [],
+      disabled_from: r.disabled_from ? new Date(String(r.disabled_from)).toISOString() : null,
+      disabled_until: r.disabled_until ? new Date(String(r.disabled_until)).toISOString() : null,
+      disabled_reason: r.disabled_reason ? String(r.disabled_reason) : null,
     }));
   }
 
@@ -152,23 +194,30 @@ export class AdminController {
     if (!request.principal.roles.includes('ADMIN')) throw new ForbiddenException('Cần quyền quản trị.');
     if (id === request.principal.id) throw new ForbiddenException('Không tự khóa tài khoản quản trị.');
 
+    let from: Date | null = null;
     let until: Date | null = null;
     if (input.disabled) {
+      if (input.disabled_from) {
+        const parsedFrom = new Date(input.disabled_from);
+        if (!isNaN(parsedFrom.getTime())) from = parsedFrom;
+      }
       if (input.days && input.days > 0) {
-        until = new Date(Date.now() + input.days * 24 * 60 * 60 * 1000);
+        const baseTime = from ? from.getTime() : Date.now();
+        until = new Date(baseTime + input.days * 24 * 60 * 60 * 1000);
       } else if (input.disabled_until) {
-        until = new Date(input.disabled_until);
+        const parsedUntil = new Date(input.disabled_until);
+        if (!isNaN(parsedUntil.getTime())) until = parsedUntil;
       }
     }
     const reason = input.disabled ? (input.reason?.trim() || null) : null;
 
     await this.db.transaction(async tx => {
       const rows = await tx.query(
-        'UPDATE users SET disabled=$1, disabled_until=$2, disabled_reason=$3 WHERE id=$4 RETURNING id',
-        [input.disabled, until ? until.toISOString() : null, reason, id]
+        'UPDATE users SET disabled=$1, disabled_from=$2, disabled_until=$3, disabled_reason=$4 WHERE id=$5 RETURNING id',
+        [input.disabled, from ? from.toISOString() : null, until ? until.toISOString() : null, reason, id]
       );
       if (!rows[0]?.id && !rows[0]?.length) throw new NotFoundException('Không tìm thấy tài khoản.');
-      if (input.disabled) {
+      if (input.disabled && (!from || from <= new Date())) {
         await tx.query('UPDATE sessions SET revoked_at=COALESCE(revoked_at, now()) WHERE user_id=$1', [id]);
       }
       await tx.query('INSERT INTO audit_logs(id, actor_id, action, resource_id) VALUES($1, $2, $3, $4)',
@@ -188,22 +237,22 @@ export class AdminController {
        LEFT JOIN users target ON target.id = a.target_user_id
        ORDER BY a.created_at DESC LIMIT 50`
     );
-    return rows.map((r: any) => ({
-      id: r.id,
-      title: r.title,
-      message: r.message,
-      target_type: r.target_type,
-      target_user_id: r.target_user_id,
-      target_user_name: r.target_user_name || null,
-      created_by_name: r.creator_name || 'Admin',
-      created_at: new Date(r.created_at).toISOString(),
+    return rows.map((r: Record<string, unknown>) => ({
+      id: String(r.id),
+      title: String(r.title),
+      message: String(r.message),
+      target_type: String(r.target_type),
+      target_user_id: r.target_user_id ? String(r.target_user_id) : null,
+      target_user_name: r.target_user_name ? String(r.target_user_name) : null,
+      created_by_name: r.creator_name ? String(r.creator_name) : 'Admin',
+      created_at: new Date(String(r.created_at)).toISOString(),
       read_count: Number(r.read_count || 0),
     }));
   }
 
   @Post('announcements')
   @ApiOkResponse({ type: AnnouncementDto })
-  async createAnnouncement(@Body() input: CreateAnnouncementDto, @Req() request: AuthRequest): Promise<any> {
+  async createAnnouncement(@Body() input: CreateAnnouncementDto, @Req() request: AuthRequest): Promise<Record<string, unknown>> {
     if (!request.principal.roles.includes('ADMIN')) throw new ForbiddenException('Cần quyền quản trị.');
     if (input.target_type === 'USER' && !input.target_user_id) {
       throw new BadRequestException('Cần chọn người dùng cụ thể khi gửi thông báo cá nhân.');
@@ -235,12 +284,13 @@ export class AdminController {
 
   @Get('complaints')
   @ApiOkResponse({ type: [Object] })
-  async getComplaints(@Req() req: AuthRequest): Promise<any[]> {
+  async getComplaints(@Req() req: AuthRequest): Promise<Record<string, unknown>[]> {
     if (!req.principal.roles.includes('ADMIN')) throw new ForbiddenException('Cần quyền quản trị.');
+    await this.autoClearExpiredLocks();
     return this.db.query(`
       SELECT comp.id, comp.course_id, comp.user_id, comp.reason, comp.description,
              comp.status, comp.admin_notes, comp.resolved_at, comp.created_at,
-             c.title as course_title, c.status as course_status,
+             c.title as course_title, c.status as course_status, c.is_locked as course_is_locked,
              u.display_name as student_name, u.email as student_email,
              inst.display_name as instructor_name, inst.email as instructor_email
       FROM course_complaints comp
@@ -265,10 +315,22 @@ export class AdminController {
 
     const notes = input.admin_notes?.trim() || null;
     if (input.action === 'CLOSE_COURSE') {
+      let lockedAt: Date = new Date();
+      if (input.locked_from) {
+        const parsedFrom = new Date(input.locked_from);
+        if (!isNaN(parsedFrom.getTime())) lockedAt = parsedFrom;
+      }
+      let until: Date | null = null;
+      if (input.days && input.days > 0) {
+        until = new Date(lockedAt.getTime() + input.days * 24 * 60 * 60 * 1000);
+      } else if (input.locked_until) {
+        const parsedUntil = new Date(input.locked_until);
+        if (!isNaN(parsedUntil.getTime())) until = parsedUntil;
+      }
       const lockReason = `Đã đóng/khóa khóa học theo khiếu nại của học viên (${comp.reason}): ${notes || 'Vi phạm tiêu chuẩn'}`;
       await this.db.query(
-        "UPDATE courses SET status='ARCHIVED', is_locked=TRUE, locked_at=now(), locked_reason=$1, locked_by=$2, action_reason=$1, updated_at=now() WHERE id=$3",
-        [lockReason, req.principal.id, comp.course_id]
+        "UPDATE courses SET status='ARCHIVED', is_locked=TRUE, locked_at=$4, scheduled_until=$5, locked_reason=$1, locked_by=$2, action_reason=$1, updated_at=now() WHERE id=$3",
+        [lockReason, req.principal.id, comp.course_id, lockedAt.toISOString(), until ? until.toISOString() : null]
       );
       await this.db.query(
         "UPDATE course_complaints SET status='RESOLVED', admin_notes=$1, resolved_by=$2, resolved_at=now() WHERE id=$3",
@@ -289,11 +351,12 @@ export class AdminController {
 
   @Get('locked-courses')
   @ApiOkResponse({ type: [Object] })
-  async getLockedCourses(@Req() req: AuthRequest): Promise<any[]> {
+  async getLockedCourses(@Req() req: AuthRequest): Promise<Record<string, unknown>[]> {
     if (!req.principal.roles.includes('ADMIN')) throw new ForbiddenException('Cần quyền quản trị.');
+    await this.autoClearExpiredLocks();
     return this.db.query(`
       SELECT c.id, c.title, c.description, c.status, c.is_locked, c.locked_at, c.locked_reason,
-             c.created_at, c.thumbnail_url,
+             c.scheduled_until as locked_until, c.created_at, c.thumbnail_url,
              u.id as owner_id, u.display_name as owner_name, u.email as owner_email,
              lb.display_name as locked_by_name
       FROM courses c
@@ -301,6 +364,23 @@ export class AdminController {
       LEFT JOIN users lb ON lb.id = c.locked_by
       WHERE c.is_locked = TRUE
       ORDER BY c.locked_at DESC NULLS LAST
+    `);
+  }
+
+  @Get('all-courses')
+  @ApiOkResponse({ type: [Object] })
+  async getAllCourses(@Req() req: AuthRequest): Promise<Record<string, unknown>[]> {
+    if (!req.principal.roles.includes('ADMIN')) throw new ForbiddenException('Cần quyền quản trị.');
+    await this.autoClearExpiredLocks();
+    return this.db.query(`
+      SELECT c.id, c.title, c.description, c.status, c.is_locked, c.locked_at, c.locked_reason,
+             c.scheduled_until as locked_until, c.created_at, c.thumbnail_url, c.tag,
+             u.id as owner_id, u.display_name as owner_name, u.email as owner_email,
+             lb.display_name as locked_by_name
+      FROM courses c
+      JOIN users u ON u.id = c.owner_id
+      LEFT JOIN users lb ON lb.id = c.locked_by
+      ORDER BY c.is_locked DESC, c.created_at DESC
     `);
   }
 
@@ -316,7 +396,7 @@ export class AdminController {
     if (!c) throw new NotFoundException('Không tìm thấy khóa học.');
     await this.db.query(`
       UPDATE courses
-      SET is_locked=FALSE, status='PUBLISHED', locked_at=NULL, locked_reason=NULL, locked_by=NULL, action_reason=NULL, updated_at=now()
+      SET is_locked=FALSE, status='PUBLISHED', locked_at=NULL, scheduled_until=NULL, locked_reason=NULL, locked_by=NULL, action_reason=NULL, updated_at=now()
       WHERE id=$1
     `, [id]);
     await this.db.query(
@@ -331,18 +411,30 @@ export class AdminController {
   @ApiOkResponse({ schema: { type: 'object', properties: { success: { type: 'boolean' } } } })
   async lockCourse(
     @Param('id', new ParseUUIDPipe()) id: string,
-    @Body() input: { reason?: string },
+    @Body() input: LockCourseDto,
     @Req() req: AuthRequest
   ): Promise<{ success: boolean }> {
     if (!req.principal.roles.includes('ADMIN')) throw new ForbiddenException('Cần quyền quản trị.');
     const [c] = await this.db.query('SELECT id, title FROM courses WHERE id=$1', [id]);
     if (!c) throw new NotFoundException('Không tìm thấy khóa học.');
     const reason = input?.reason?.trim() || 'Tạm khóa bởi Quản trị viên để kiểm duyệt';
+    let lockedAt: Date = new Date();
+    if (input?.locked_from) {
+      const parsedFrom = new Date(input.locked_from);
+      if (!isNaN(parsedFrom.getTime())) lockedAt = parsedFrom;
+    }
+    let until: Date | null = null;
+    if (input?.days && input.days > 0) {
+      until = new Date(lockedAt.getTime() + input.days * 24 * 60 * 60 * 1000);
+    } else if (input?.locked_until) {
+      const parsedUntil = new Date(input.locked_until);
+      if (!isNaN(parsedUntil.getTime())) until = parsedUntil;
+    }
     await this.db.query(`
       UPDATE courses
-      SET is_locked=TRUE, status='ARCHIVED', locked_at=now(), locked_reason=$1, locked_by=$2, action_reason=$1, updated_at=now()
-      WHERE id=$3
-    `, [reason, req.principal.id, id]);
+      SET is_locked=TRUE, status='ARCHIVED', locked_at=$3, scheduled_until=$4, locked_reason=$1, locked_by=$2, action_reason=$1, updated_at=now()
+      WHERE id=$5
+    `, [reason, req.principal.id, lockedAt.toISOString(), until ? until.toISOString() : null, id]);
     await this.db.query(
       'INSERT INTO audit_logs(id, actor_id, action, resource_id) VALUES($1, $2, $3, $4)',
       [randomUUID(), req.principal.id, 'COURSE_LOCKED', id]
@@ -383,14 +475,14 @@ export class AnnouncementsController {
       [request.principal.id, isInstructor, isStudent]
     );
 
-    return rows.map((r: any) => ({
-      id: r.id,
-      title: r.title,
-      message: r.message,
-      target_type: r.target_type,
-      target_user_id: r.target_user_id,
-      created_by_name: r.creator_name || 'Hệ thống',
-      created_at: new Date(r.created_at).toISOString(),
+    return rows.map((r: Record<string, unknown>) => ({
+      id: String(r.id),
+      title: String(r.title),
+      message: String(r.message),
+      target_type: String(r.target_type),
+      target_user_id: r.target_user_id ? String(r.target_user_id) : null,
+      created_by_name: r.creator_name ? String(r.creator_name) : 'Hệ thống',
+      created_at: new Date(String(r.created_at)).toISOString(),
       read_count: Number(r.read_count || 0),
     }));
   }

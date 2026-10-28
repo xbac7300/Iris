@@ -39,8 +39,8 @@ export async function createApp(config: Config, db: DataSource, storage: ObjectS
       { provide: DataSource, useValue: db }, { provide: CONFIG, useValue: config }] })
   class AppModule {}
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { logger: false });
-  app.useBodyParser('json', { limit: '10mb' });
-  app.useBodyParser('urlencoded', { extended: true, limit: '10mb' });
+  app.useBodyParser('json', { limit: '20mb' });
+  app.useBodyParser('urlencoded', { extended: true, limit: '20mb' });
   app.setGlobalPrefix('api/v1');
   const allowedOrigins = new Set([
     config.WEB_ORIGIN,

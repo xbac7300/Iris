@@ -1,17 +1,13 @@
 'use client';
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
-import type { components } from '@lms/api-client';
+import type { components, CourseTag } from '@lms/api-client';
 import { session } from './session';
 import { ProgressTracker, COURSE_TAGS } from '@lms/api-client';
 import { LearningPanel } from './learning-panel';
 import { CourseLearning, ChapterQuizSection, LessonQuizSection } from './course-learning';
 import { CourseFeedback } from './course-feedback';
 import { processImageFile } from './image-utils';
-type Course = components['schemas']['CourseDto'] & {
-  is_locked?: boolean;
-  locked_at?: string | null;
-  locked_reason?: string | null;
-};
+type Course = components['schemas']['CourseDto'];
 type Lesson = components['schemas']['LessonDetailsDto'];
 type Module = components['schemas']['ModuleDto'];
 type Playback = components['schemas']['PlaybackDto'];
@@ -135,21 +131,21 @@ export function CourseEditor({ initial, onBack, onChange, isInstructorMode }: { 
   const [expandedChapters, setExpandedChapters] = useState<Record<string, boolean>>({});
   const [editTitle, setEditTitle] = useState(initial.title);
   const [editDescription, setEditDescription] = useState(initial.description || '');
-  const [editTag, setEditTag] = useState((initial as any).tag || 'CNTT & Phần mềm');
-  const [editThumbnailUrl, setEditThumbnailUrl] = useState((initial as any).thumbnail_url || '');
-  const [editAccessMode, setEditAccessMode] = useState<'PUBLIC' | 'LINK' | 'RESTRICTED'>((initial as any).access_mode || 'PUBLIC');
-  const [editAllowedEmailsText, setEditAllowedEmailsText] = useState(Array.isArray((initial as any).allowed_emails) ? (initial as any).allowed_emails.join('\n') : '');
+  const [editTag, setEditTag] = useState<CourseTag>((initial.tag as CourseTag) || 'CNTT & Phần mềm');
+  const [editThumbnailUrl, setEditThumbnailUrl] = useState(initial.thumbnail_url || '');
+  const [editAccessMode, setEditAccessMode] = useState<'PUBLIC' | 'LINK' | 'RESTRICTED'>((initial.access_mode as 'PUBLIC' | 'LINK' | 'RESTRICTED') || 'PUBLIC');
+  const [editAllowedEmailsText, setEditAllowedEmailsText] = useState(Array.isArray(initial.allowed_emails) ? initial.allowed_emails.join('\n') : '');
   const [copiedLink, setCopiedLink] = useState(false);
   const thumbnailInputRef = useRef<HTMLInputElement>(null);
   const live = useRef(true);
   const flight = useRef(false);
 
   // Trạng thái bị Quản trị viên khóa
-  const isLocked = Boolean((course as any).is_locked);
+  const isLocked = Boolean(course.is_locked);
   // Admin không chỉnh sửa khóa học hay can thiệp quản lý trực tiếp
   const isAdmin = Boolean(session.user?.roles.includes('ADMIN'));
-  // Chỉ khi đang ở chế độ Giảng viên mới có quyền chỉnh sửa khóa học của bản thân; Admin không chỉnh sửa
-  const isOwner = Boolean(!isAdmin && isInstructorMode && session.user?.id === course.owner_id && session.user.roles.includes('INSTRUCTOR'));
+  // Chỉ khi đang ở chế độ Giảng viên mới có quyền chỉnh sửa khóa học của bản thân
+  const isOwner = Boolean(isInstructorMode && session.user?.id === course.owner_id && session.user.roles.includes('INSTRUCTOR'));
   // Khi khóa học bị Quản trị viên khóa, chủ khóa cũng KHÔNG thể chỉnh sửa hay tương tác quản lý
   const canManage = isOwner && !isLocked;
   // Cho phép chỉnh sửa, thêm/xóa bài học hoặc chương kể cả khi khóa học đang xuất bản (trừ khi đang bị khóa)
@@ -178,14 +174,14 @@ export function CourseEditor({ initial, onBack, onChange, isInstructorMode }: { 
     setComplaintBusy(true);
     setComplaintSuccess('');
     try {
-      const res = await session.api.POST('/api/v1/courses/{id}/complaints' as any, {
+      const res = await session.api.POST('/api/v1/courses/{id}/complaints', {
         params: { path: { id: course.id } },
         body: {
           reason: complaintReason,
           description: complaintDescription.trim(),
         },
       });
-      if (res.error) throw new Error((res.error as any).message ?? 'Không thể gửi khiếu nại.');
+      if (res.error) throw new Error(res.error.message ?? 'Không thể gửi khiếu nại.');
       setComplaintSuccess('Khiếu nại của bạn đã được gửi thành công đến Quản trị viên hệ thống để xem xét xử lý.');
       setComplaintDescription('');
     } catch (err) {
@@ -198,6 +194,12 @@ export function CourseEditor({ initial, onBack, onChange, isInstructorMode }: { 
   const load = useCallback(async () => {
     if (flight.current) return; flight.current = true;
     try {
+      const { data: latestCourse } = await session.api.GET('/api/v1/courses/{id}', { params: { path: { id: initial.id } } });
+      if (live.current && latestCourse) setCourse(latestCourse);
+      if (latestCourse?.is_locked && !isAdmin) {
+        if (live.current) { setModules([]); setLessons([]); setCanRead(false); }
+        return;
+      }
       const allModules: Module[] = [], allLessons: Lesson[] = [];
       for (let offset = 0; offset <= 10000; offset += 100) {
         const { data, error } = await session.api.GET('/api/v1/courses/{id}/modules', { params: { path: { id: initial.id }, query: { limit: 100, offset } } });
@@ -208,11 +210,10 @@ export function CourseEditor({ initial, onBack, onChange, isInstructorMode }: { 
         if (data) allLessons.push(...data);
         if (!data || data.length < 100) break;
       }
-      const { data } = await session.api.GET('/api/v1/courses/{id}', { params: { path: { id: initial.id } } });
-      if (live.current) { setModules(allModules); setLessons(allLessons); setCanRead(Boolean(canManage || allLessons.length > 0)); if (data) setCourse(data); }
+      if (live.current) { setModules(allModules); setLessons(allLessons); setCanRead(Boolean(canManage || allLessons.length > 0)); }
     } catch (error) { if (live.current) setMessage(errorText(error)); }
     finally { flight.current = false; if (live.current) setLoaded(true); }
-  }, [initial.id, canManage]);
+  }, [initial.id, canManage, isAdmin]);
   useEffect(() => { live.current = true; void load(); const timer = setInterval(() => void load(), 3000); return () => { live.current = false; clearInterval(timer); }; }, [load]);
   async function act(task: () => Promise<void>) { setBusy(true); setMessage(''); try { await task(); await load(); } catch (error) { if (live.current) setMessage(errorText(error)); } finally { if (live.current) setBusy(false); } }
   function addModule(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const form = event.currentTarget; const title = String(new FormData(form).get('title')).trim(); void act(async () => {
@@ -365,21 +366,21 @@ export function CourseEditor({ initial, onBack, onChange, isInstructorMode }: { 
         body: {
           title: editTitle.trim(),
           description: editDescription.trim(),
-          tag: editTag as any,
+          tag: editTag,
           thumbnail_url: editThumbnailUrl || undefined,
           access_mode: editAccessMode,
           allowed_emails: editAccessMode === 'RESTRICTED' ? parsedEmails : [],
-        } as any,
+        },
       });
       if (error) throw new Error(error?.message ?? 'Chưa thể cập nhật thông tin khóa học.');
       if (data) {
         setCourse(data);
         setEditTitle(data.title);
         setEditDescription(data.description || '');
-        setEditTag((data as any).tag || 'CNTT & Phần mềm');
-        setEditThumbnailUrl((data as any).thumbnail_url || '');
-        setEditAccessMode((data as any).access_mode || 'PUBLIC');
-        setEditAllowedEmailsText(Array.isArray((data as any).allowed_emails) ? (data as any).allowed_emails.join('\n') : '');
+        setEditTag((data.tag as CourseTag) || 'CNTT & Phần mềm');
+        setEditThumbnailUrl(data.thumbnail_url || '');
+        setEditAccessMode((data.access_mode as 'PUBLIC' | 'LINK' | 'RESTRICTED') || 'PUBLIC');
+        setEditAllowedEmailsText(Array.isArray(data.allowed_emails) ? data.allowed_emails.join('\n') : '');
       }
       setIsEditingInfo(false);
       setMessage('Đã cập nhật thông tin khóa học thành công!');
@@ -394,7 +395,7 @@ export function CourseEditor({ initial, onBack, onChange, isInstructorMode }: { 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', margin: '4px 0 8px' }}>
           <h2 style={{ margin: 0 }}>{course.title}</h2>
           <span className="badge" style={{ background: 'var(--bg-elevated)', color: 'var(--accent-text)', border: '1px solid var(--border-color)', fontWeight: 600 }}>
-            {(course as any).tag || 'CNTT & Phần mềm'}
+            {course.tag || 'CNTT & Phần mềm'}
           </span>
           {isLocked ? (
             <span className="badge" style={{ background: 'rgba(220, 38, 38, 0.15)', color: '#dc2626', border: '1px solid #ef4444', fontWeight: 700 }}>
@@ -406,22 +407,22 @@ export function CourseEditor({ initial, onBack, onChange, isInstructorMode }: { 
             </span>
           )}
           {/* Access mode badge */}
-          {((course as any).access_mode === 'LINK' || (course as any).access_mode === 'RESTRICTED') && (
+          {(course.access_mode === 'LINK' || course.access_mode === 'RESTRICTED') && (
             <span
               className="badge"
               style={{
-                background: (course as any).access_mode === 'LINK' ? 'rgba(59, 130, 246, 0.12)' : 'rgba(168, 85, 247, 0.12)',
-                color: (course as any).access_mode === 'LINK' ? '#2563eb' : '#9333ea',
-                border: `1px solid ${(course as any).access_mode === 'LINK' ? '#93c5fd' : '#d8b4fe'}`,
+                background: course.access_mode === 'LINK' ? 'rgba(59, 130, 246, 0.12)' : 'rgba(168, 85, 247, 0.12)',
+                color: course.access_mode === 'LINK' ? '#2563eb' : '#9333ea',
+                border: `1px solid ${course.access_mode === 'LINK' ? '#93c5fd' : '#d8b4fe'}`,
                 fontWeight: 600,
               }}
             >
-              {(course as any).access_mode === 'LINK' ? 'Chia sẻ liên kết' : 'Chỉ định học viên'}
+              {course.access_mode === 'LINK' ? 'Chia sẻ liên kết' : 'Chỉ định học viên'}
             </span>
           )}
 
           {/* Copy link button if access_mode is LINK */}
-          {(course as any).access_mode === 'LINK' && (
+          {course.access_mode === 'LINK' && (
             <button
               type="button"
               className="secondary"
@@ -446,10 +447,10 @@ export function CourseEditor({ initial, onBack, onChange, isInstructorMode }: { 
               onClick={() => {
                 setEditTitle(course.title);
                 setEditDescription(course.description || '');
-                setEditTag((course as any).tag || 'CNTT & Phần mềm');
-                setEditThumbnailUrl((course as any).thumbnail_url || '');
-                setEditAccessMode((course as any).access_mode || 'PUBLIC');
-                setEditAllowedEmailsText(Array.isArray((course as any).allowed_emails) ? (course as any).allowed_emails.join('\n') : '');
+                setEditTag((course.tag as CourseTag) || 'CNTT & Phần mềm');
+                setEditThumbnailUrl(course.thumbnail_url || '');
+                setEditAccessMode((course.access_mode as 'PUBLIC' | 'LINK' | 'RESTRICTED') || 'PUBLIC');
+                setEditAllowedEmailsText(Array.isArray(course.allowed_emails) ? course.allowed_emails.join('\n') : '');
                 setIsEditingInfo(true);
               }}
             >
@@ -489,9 +490,9 @@ export function CourseEditor({ initial, onBack, onChange, isInstructorMode }: { 
           {course.description || 'Từng bài học nhỏ, mở ra những kiến thức mới.'}
         </p>
       </div>
-      {(course as any).thumbnail_url ? (
+      {course.thumbnail_url ? (
         <div style={{ width: '220px', height: '124px', borderRadius: '10px', overflow: 'hidden', border: '1px solid var(--border-color)', flexShrink: 0, background: 'var(--bg-elevated)' }}>
-          <img src={(course as any).thumbnail_url} alt={course.title} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+          <img src={course.thumbnail_url} alt={course.title} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
         </div>
       ) : (
         <div style={{ width: '160px', height: '90px', borderRadius: '10px', border: '1px solid var(--border-color)', background: 'var(--bg-elevated)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: '10px', textAlign: 'center' }}>
@@ -502,11 +503,14 @@ export function CourseEditor({ initial, onBack, onChange, isInstructorMode }: { 
     {isLocked && (
       <div style={{ marginTop: '16px', padding: '16px 20px', background: 'rgba(220, 38, 38, 0.08)', border: '2px solid #ef4444', borderRadius: '12px' }}>
         <strong style={{ color: '#dc2626', fontSize: '15px', display: 'block', marginBottom: '6px' }}>
-          [KHÓA HỌC ĐANG BỊ KHÓA] Khóa học này đã bị Quản trị viên tạm khóa do vi phạm hoặc khiếu nại
+          [KHÓA HỌC ĐANG BỊ KHÓA] Khóa học này đã bị Quản trị viên tạm khóa
         </strong>
         <p style={{ margin: 0, fontSize: '14px', lineHeight: 1.5, color: 'var(--text-primary)' }}>
-          {(course as any).locked_reason ? `Lý do khóa: ${(course as any).locked_reason}` : 'Khóa học đang trong diện xem xét kiểm duyệt bởi Quản trị viên.'}
-          {' '}Mọi thao tác chỉnh sửa nội dung, thêm bài học và đăng ký mới tạm thời bị vô hiệu hóa cho đến khi Quản trị viên mở khóa.
+          {course.locked_reason ? `Lý do khóa: ${course.locked_reason}. ` : 'Khóa học đang trong diện xem xét kiểm duyệt bởi Quản trị viên. '}
+          {course.scheduled_until
+            ? `Thời hạn mở khóa dự kiến: ${new Date(course.scheduled_until).toLocaleString('vi-VN')}. `
+            : 'Thời hạn khóa: Vô thời hạn (cho đến khi Quản trị viên mở khóa). '}
+          Mọi thao tác học tập, xem video, làm bài kiểm tra, chỉnh sửa nội dung và đăng ký mới đều bị vô hiệu hóa trong thời gian khóa.
         </p>
       </div>
     )}
@@ -529,7 +533,7 @@ export function CourseEditor({ initial, onBack, onChange, isInstructorMode }: { 
             Chủ đề / Phân loại
             <select
               value={editTag}
-              onChange={(e) => setEditTag(e.target.value)}
+              onChange={(e) => setEditTag(e.target.value as CourseTag)}
             >
               {COURSE_TAGS.map((t) => (
                 <option key={t} value={t}>{t}</option>
@@ -686,16 +690,16 @@ export function CourseEditor({ initial, onBack, onChange, isInstructorMode }: { 
       </form>
     )}
     {message && <p role="alert" className="notice">{message}</p>}
-    {(course as any).scheduled_action && (
+    {course.scheduled_action && (
       <div className="notice" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', borderLeft: '4px solid var(--accent-color)', marginBottom: '16px' }}>
         <div>
           <strong>Lịch hẹn tự động đang chờ: </strong>
           <span>
-            {(course as any).scheduled_action === 'PUBLISH' && 'Xuất bản khóa học'}
-            {(course as any).scheduled_action === 'ARCHIVE' && 'Ngưng xuất bản / Lưu trữ khóa học'}
-            {(course as any).scheduled_action === 'DELETE' && 'Xóa vĩnh viễn khóa học'}
+            {course.scheduled_action === 'PUBLISH' && 'Xuất bản khóa học'}
+            {course.scheduled_action === 'ARCHIVE' && 'Ngưng xuất bản / Lưu trữ khóa học'}
+            {course.scheduled_action === 'DELETE' && 'Xóa vĩnh viễn khóa học'}
             {' vào '}
-            {(course as any).scheduled_at ? new Date((course as any).scheduled_at).toLocaleString('vi-VN') : 'thời gian quy định'}
+            {course.scheduled_at ? new Date(course.scheduled_at).toLocaleString('vi-VN') : 'thời gian quy định'}
           </span>
         </div>
         {canManage && (
@@ -740,8 +744,8 @@ export function CourseEditor({ initial, onBack, onChange, isInstructorMode }: { 
               onClick={() => {
                 setEditTitle(course.title);
                 setEditDescription(course.description || '');
-                setEditTag((course as any).tag || 'CNTT & Phần mềm');
-                setEditThumbnailUrl((course as any).thumbnail_url || '');
+                setEditTag((course.tag as CourseTag) || 'CNTT & Phần mềm');
+                setEditThumbnailUrl(course.thumbnail_url || '');
                 setIsEditingInfo(true);
                 window.scrollTo({ top: 0, behavior: 'smooth' });
               }}
@@ -750,7 +754,12 @@ export function CourseEditor({ initial, onBack, onChange, isInstructorMode }: { 
             </button>
           </div>
         )}
-        {modules.length === 0 && <div className="empty"><h3>Bắt đầu từ chương đầu tiên</h3><p>Thêm một chương, tạo bài học và tải video của bạn lên.</p></div>}
+        {modules.length === 0 && (
+          <div className="empty">
+            <h3>{isLocked ? 'Nội dung khóa học đang tạm đóng' : 'Bắt đầu từ chương đầu tiên'}</h3>
+            <p>{isLocked ? 'Khóa học này đang bị Quản trị viên tạm khóa nên toàn bộ bài giảng và bài kiểm tra không thể truy cập.' : 'Thêm một chương, tạo bài học và tải video của bạn lên.'}</p>
+          </div>
+        )}
 
         {/* Thanh stepper chương */}
         {modules.length > 0 && (
@@ -846,7 +855,7 @@ export function CourseEditor({ initial, onBack, onChange, isInstructorMode }: { 
         )}
 
         {editable && <form className="panel inline-form" onSubmit={addModule}><label>Tên chương mới<input name="title" required maxLength={200} placeholder="Ví dụ: Kiến thức nền tảng" /></label><button disabled={busy}>Thêm chương</button></form>}
-        {canRead&&<CourseLearning courseId={course.id} owner={Boolean(canManage)} editable={editable}/>}
+        {canRead&&<CourseLearning courseId={course.id} owner={Boolean(canManage)}/>}
         <CourseFeedback courseId={course.id} isOwner={Boolean(isOwner)} />
       </div><aside className="course-guide"><p className="eyebrow">TỔNG QUAN KHÓA HỌC</p><div className="guide-number">{ready}<span> / {lessons.length}</span></div><p>video sẵn sàng để học</p><progress value={ready} max={Math.max(1, lessons.length)} /><hr /><h3>{editable ? 'Chuẩn bị bài giảng' : 'Học theo từng bước'}</h3>{canManage?<ol><li>Tạo chương và bài học</li><li>Tải video và chuẩn bị nguồn AI</li><li>Thêm quiz, xem thử và xuất bản</li></ol>:<ol><li>Xem video theo lộ trình</li><li>Ôn lại bằng transcript và hỏi AI</li><li>Làm bài kiểm tra kiến thức</li></ol>}
         {/* Sidebar: Danh mục chương — nhấn để chuyển chương nhanh */}
@@ -1009,8 +1018,8 @@ export function CourseEditor({ initial, onBack, onChange, isInstructorMode }: { 
               onClick={() => {
                 setEditTitle(course.title);
                 setEditDescription(course.description || '');
-                setEditTag((course as any).tag || 'CNTT & Phần mềm');
-                setEditThumbnailUrl((course as any).thumbnail_url || '');
+                setEditTag((course.tag as CourseTag) || 'CNTT & Phần mềm');
+                setEditThumbnailUrl(course.thumbnail_url || '');
                 setIsEditingInfo(true);
                 window.scrollTo({ top: 0, behavior: 'smooth' });
               }}

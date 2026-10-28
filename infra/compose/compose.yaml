@@ -28,7 +28,7 @@ services:
   storage:
     image: chrislusf/seaweedfs:4.47@sha256:ce9e796f1fe6f06968f4c04bdaf8f678dad9c8acdfef3d244133d71bfa6bf882
     command: ["server", "-dir=/data", "-s3", "-s3.config=/etc/seaweedfs/s3.json", "-s3.port.iceberg=0", "-s3.port.lance=0"]
-    ports: ["127.0.0.1:8333:8333"]
+    ports: ["0.0.0.0:8333:8333"]
     volumes:
       - storage_data:/data
       - ../../.local/s3.json:/etc/seaweedfs/s3.json:ro

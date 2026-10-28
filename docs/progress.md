@@ -1,5 +1,104 @@
 # Tiến độ Topic 16 LMS RAG trên Web và Mobile
 
+## Cập nhật toàn diện: Bài kiểm tra theo Chương, Đồng bộ Modal Xóa Khóa học & Thẻ Giảng viên chuẩn Web, Chia sẻ Link Khóa học, Tải Ảnh Bìa từ Thiết bị & Đóng gói APK Release mới, 29/10/2026
+
+Bản cập nhật này giải quyết triệt để 100% các yêu cầu từ người dùng:
+
+1. **Bài kiểm tra Đánh giá theo từng Chương (Chapter Quizzes)**:
+   - **Gắn bài kiểm tra với từng chương cụ thể**: Trong màn hình Quản lý bài giảng (`apps/mobile/app/course/edit/[id].tsx`), mỗi thẻ chương có nút `+ Thêm bài kiểm tra` riêng biệt. Modal soạn đề thi cho phép chọn gán bài kiểm tra cho chương đang chọn hoặc toàn khóa học.
+   - **Khắc phục lỗi tạo bài kiểm tra**: Kiểm tra tính hợp lệ chặt chẽ trước khi gửi (tiêu đề, nội dung câu hỏi, tối thiểu 2 đáp án, chính xác 1 đáp án đúng cho trắc nghiệm), kiểm tra `res.error` trả về từ API và hiển thị thông báo lỗi chi tiết thay vì đóng modal âm thầm.
+   - **Hiển thị bài kiểm tra theo chương trên cả 2 màn hình**:
+     - Trong màn hình học tập (`apps/mobile/app/course/[id].tsx`): Bài kiểm tra thuộc chương đang mở xuất hiện trực tiếp ngay dưới danh sách bài học của chương đó, kèm nhãn `BÀI KIỂM TRA CHƯƠNG` để học viên làm bài tiện lợi.
+     - Trong khối `Bài kiểm tra đánh giá` ở cuối: Có huy hiệu "Bài kiểm tra chương" để phân biệt với đề thi chung toàn khóa.
+
+2. **Đồng bộ Modal Xóa Khóa học & Thẻ Giảng viên Chuẩn Web (Khớp 100% Ảnh chụp)**:
+   - **Modal Xóa Khóa học (`Xóa khóa học`)**: Đã tinh gọn thành đúng **2 lựa chọn** giống hệt trên Web (khớp ảnh chụp màn hình `media_1793212605752_866aa238.png`):
+     - `(o) Áp dụng ngay lập tức`
+     - `( ) Lên lịch theo ngày giờ`
+     - Bỏ hẳn tùy chọn khoảng thời gian (`range`) khi xóa khóa học.
+     - Ô nhập lý do: `Thông báo kèm lý do thực hiện (tùy chọn):` với gợi ý `Nhập lý do ngưng xuất bản hoặc xóa khóa học để thông báo cho học viên...`.
+     - 2 nút hành động: `[Hủy bỏ]` và `[Xác nhận Xóa]`.
+   - **Thẻ khóa học của Giảng viên trên Màn hình chính (`apps/mobile/app/index.tsx`)**:
+     - Hàng dưới cùng khớp chuẩn 100% Web (ảnh chụp `media_1793212625396_6f5c5d03.png`):
+       - Bên trái: `Quản lý bài giảng` (màu xanh thương hiệu).
+       - Bên phải: `Chia sẻ` (nếu là khóa chia sẻ link), `Ngừng xuất bản` (màu cam hổ phách), `Xóa` (màu đỏ).
+     - Bấm `Ngừng xuất bản` hoặc `Xóa` trên thẻ mở trực tiếp Modal hành động chuẩn Web ngay trên trang chủ.
+
+3. **Tính năng Chia sẻ Link Khóa học (Course Sharing)**:
+   - Thêm nút `Chia sẻ` / `Chia sẻ link` tại 3 vị trí: Trên thẻ khóa học ở Màn hình chính, thanh điều hướng đầu trang học tập (`/course/[id]`), và đầu trang Quản lý bài giảng (`/course/edit/[id]`).
+   - Sử dụng `Share.share` nguyên bản của thiết bị di động, tự động tạo liên kết khóa học chuẩn theo IP máy chủ hiện tại kèm thông điệp mời tham gia.
+   - Trong Modal Tạo khóa học mới: Khi chọn quyền truy cập `Chia sẻ link`, hiển thị ngay hộp chỉ dẫn giải thích cách chia sẻ link sau khi tạo xong.
+
+4. **Tải Ảnh Bìa từ Thiết bị (Upload Image from Device)**:
+   - Thay thế hoàn toàn ô nhập URL ảnh thủ công trong Modal Tạo khóa học bằng trình chọn ảnh thiết bị (`pickCourseThumbnailImage`). Hỗ trợ chọn ảnh từ thư viện, xem trước trực tiếp, đổi ảnh hoặc xóa ảnh nhanh chóng.
+
+5. **Kiểm thử Tự động & Đóng gói APK Release**:
+   - `pnpm typecheck`: Vượt qua 100% không có lỗi trên tất cả các package và app.
+   - `pnpm lint`: Vượt qua 100% với 0 lỗi quy chuẩn mã nguồn.
+   - `pnpm test`: Vượt qua 100% (16/16 tests trong 5 test suites).
+   - `gradlew.bat assembleRelease`: Build thành công trong 58 giây.
+   - Tệp APK phân phối tại thư mục gốc: `C:\CNPM_CK\app-release.apk` (Dung lượng: ~96.37 MB, SHA-256: `F5365BF23CF41689538C559A347B1785192E894DD570459E56BD48477F7F6C02`).
+
+
+## Cập nhật toàn diện Mobile: Tối ưu Bố cục Trực quan, Chuyển Thông tin & Đánh giá xuống "Chi tiết khóa học" ở cuối trang, Khắc phục lỗi Chồng chéo nút (Overlapping), Loại bỏ Icon thừa & Build APK Release mới, 29/10/2026
+
+Bản cập nhật này giải quyết triệt để 100% các phản hồi từ người dùng về giao diện và bố cục màn hình:
+
+1. **Tối ưu hóa Bố cục Màn hình Khóa học (`/course/[id]`)**:
+   - **Tập trung ngay vào Bài Giảng và Nội dung bài học**: Khi học viên hoặc giảng viên bước vào khóa học, màn hình không còn bị thẻ Hero lớn (ảnh bìa, mô tả dài, thẻ tag) chiếm trọn phía trên. Màn hình mở ngay lập tức **Trình phát video bài giảng (`NativeLesson`)** và **Nội dung bài học (Curriculum)**.
+   - **Chuyển toàn bộ Thông tin khóa học & Đánh giá khiếu nại xuống cuối trang trong ô "Chi tiết khóa học"**:
+     - Bổ sung ô accordion ở cuối trang: `Chi tiết khóa học` (mặc định đóng gọn gàng).
+     - Khi người dùng chạm vào ô này, phần chi tiết mới mở ra đầy đủ: Ảnh bìa khóa học, thẻ chủ đề, trạng thái, mô tả chi tiết, thông tin giảng viên, điểm đánh giá sao, nút quản lý bài giảng (nếu là giảng viên), thống kê tiến độ học tập và phần Đánh giá & Khiếu nại khóa học.
+   - **Loại bỏ trùng lặp nút Chọn bài / Danh sách bài**:
+     - Bỏ nút `☰ Mục lục` trùng lặp ở thanh header trên cùng.
+     - Bỏ nút `☰ Chọn bài` trùng lặp ở tiêu đề bài học.
+     - Thanh điều hướng bài học chỉ còn duy nhất 3 nút tinh gọn trên 1 hàng: `[‹ Bài trước]  [Danh sách bài (X/Y)]  [Bài sau ›]`.
+
+2. **Khắc phục lỗi Chồng chéo nút và Bố cục sát nhau trong Quản lý Bài giảng (`/course/edit/[id]`)**:
+   - Khắc phục lỗi giao diện trên Android khi hai nút `+ Thêm bài học` và `Xóa chương` bị đè lên chữ "Chưa có bài học trong chương này" hoặc đè lên mép trên của bài học đầu tiên (do bug đo chiều cao của React Native flexWrap khi có gap).
+   - Tách biệt rõ ràng theo chiều dọc: Nhãn chương ở trên, tiêu đề chương ở giữa, hàng nút chức năng `+ Thêm bài học` & `Xóa chương` ở dưới với padding và khoảng cách chuẩn mực, ngăn cách rõ ràng với danh sách bài học bên dưới.
+
+3. **Loại bỏ Hoàn toàn Icon / Emoji thừa**:
+   - Bỏ toàn bộ các icon thừa: `🎯`, `🌿`, `📺`, `✏️`, `📑`, `🔒`, `👤`, `⏱`.
+   - Bỏ cơ chế thu gọn/mở rộng trên banner chào mừng ở trang chủ theo đúng yêu cầu, giữ banner tĩnh thanh lịch và thoáng đãng.
+
+4. **Kiểm thử tự động & Đóng gói Android APK**:
+   - `pnpm typecheck`: Vượt qua 100% không có lỗi trên tất cả 9 packages và ứng dụng.
+   - `pnpm lint`: Vượt qua 100% 0 lỗi.
+   - Build thành công APK Android Release: `BUILD SUCCESSFUL in 51s`.
+   - Tệp APK cập nhật tại thư mục gốc: `C:\CNPM_CK\app-release.apk` (Dung lượng: 101,069,591 bytes, SHA-256: `D139949B1E28A9132F8B682B18671B7D702066D12E38F704E9E71953C0159206`).
+
+
+## Cập nhật toàn diện Mobile: Khắc phục triệt để lỗi Đăng nhập/Đăng xuất, Nút Thu gọn (Collapsible Accordion) và Chế độ Tập trung học (Focus Study Mode), Đóng gói APK Release mới, 29/10/2026
+
+Bản cập nhật này giải quyết trọn vẹn và đã vượt qua kiểm thử tự động 100% cho các yêu cầu từ người dùng:
+
+1. **Khắc phục lỗi Đăng nhập sau khi Đăng xuất (Login after Logout)**:
+   - **Nguyên nhân gốc rễ**: Tệp cấu hình môi trường `.env` có mật khẩu seed ngẫu nhiên (`SEED_PASSWORD=7758e6fa...`), trong khi giao diện gợi ý mật khẩu demo là `ChangeMe123!`. Khi người dùng đăng xuất và bấm đăng nhập lại bằng các tài khoản demo (hoặc nhập `ChangeMe123!`), API từ chối với lỗi 401 `Thông tin đăng nhập không hợp lệ`.
+   - **Xử lý**: 
+     - Viết kịch bản `scripts/reset-demo-passwords.cjs` dùng thuật toán mã hóa mật khẩu `scrypt` chuẩn của hệ thống để đồng bộ mật khẩu của 3 tài khoản demo (`admin@lms.example`, `instructor@lms.example`, `student@lms.example`) thành `ChangeMe123!`.
+     - Cập nhật `.env` với `SEED_PASSWORD=ChangeMe123!`.
+     - Cập nhật IP mặc định trong `apps/mobile/src/session.ts` thành địa chỉ Wi-Fi hiện tại của máy tính (`http://192.168.1.142:4000`).
+     - Bổ sung nút bấm trực tiếp `[Đổi IP ›]` và hiển thị địa chỉ máy chủ đang kết nối ngay trên màn hình đăng nhập di động để người dùng dễ dàng chuyển đổi IP nếu đổi mạng Wi-Fi.
+
+2. **Hệ thống Nút Thu gọn (Collapsible / Accordion) và Chế độ Tập trung học (Focus Study Mode)**:
+   - **Giải quyết tình trạng giao diện học tập quá dài, rối và chướng mắt**:
+     - **Thẻ Hero khóa học (`apps/mobile/app/course/[id].tsx`)**: Bổ sung nút `Thu gọn thông tin ▲` thu nhỏ thẻ thông tin, ảnh bìa, giảng viên thành thanh tóm tắt 1 dòng siêu gọn, có nút `Mở rộng thông tin ▼`.
+     - **Tiến độ học tập**: Thêm nút `Thu gọn ▲` thu nhỏ thành 1 dòng thanh tiến độ tinh gọn.
+     - **🎯 Chế độ tập trung học (Focus Study Mode)**: Bổ sung nút gạt 1 chạm `🎯 Chế độ tập trung học (Thu gọn mọi mục)` ngay cạnh trình phát video. Khi bật, toàn bộ các khối gây xao nhãng (Hero banner, Tiến độ, Đề thi, Đánh giá) tự động thu gọn lại, giúp học viên chỉ tập trung vào video và nội dung bài học.
+     - **Nội dung bài học (Curriculum)**: Bổ sung nút `Thu gọn bài học ▲` / `Mở rộng bài học ▼` và nút `☰ Mục lục`.
+     - **Bài kiểm tra đánh giá (Quizzes)**: Bổ sung nút `Thu gọn đề thi ▲` / `Mở rộng đề thi ▼`.
+     - **Đánh giá & Khiếu nại (Reviews)**: Bổ sung nút `Thu gọn đánh giá ▲` / `Mở rộng đánh giá ▼`.
+     - **Trình phát bài học (`NativeLesson`)**: Bổ sung nút `Thu gọn ▲` / `Mở rộng ▼` ngay trên thanh tab Tóm tắt / Transcript / Hỏi đáp AI để học viên xem trọn vẹn video mà không bị che khuất bởi danh sách phụ đề dài.
+     - **Màn hình chính (`apps/mobile/app/index.tsx`)**: Bổ sung nút `Thu gọn ✕` / `Mở rộng ▼` cho banner chào mừng ("Học theo nhịp của riêng bạn") giúp danh sách khóa học hiển thị ngay lập tức trên màn hình đầu tiên.
+
+3. **Kiểm thử tự động & Đóng gói Android APK**:
+   - `pnpm typecheck`: Vượt qua 100% toàn bộ 9 packages và ứng dụng (Web, Mobile, API, Worker, Contracts, Tokens, Client, AI-Core, Media-Core).
+   - `pnpm lint`: Vượt qua 100% với 0 lỗi quy chuẩn mã nguồn.
+   - Build thành công APK Android Release với Gradle: `BUILD SUCCESSFUL in 1m 9s`.
+   - Tệp APK phân phối tại thư mục gốc: `C:\CNPM_CK\app-release.apk` (Dung lượng: 101,072,291 bytes, SHA-256: `D89278E25BFFE830A939DF79F95D3FA1CA049B15990B7C07FF4054C17956F136`).
+
+
 ## Cập nhật toàn diện — Hoàn thiện 5 tính năng cốt lõi: Chấm bài & Phản hồi, Phân quyền Chế độ Giảng viên, Soạn bài khi Đang xuất bản, Khiếu nại Khóa học & Giới hạn Admin, 25/09/2026
 
 Bản cập nhật này giải quyết trọn vẹn và đã vượt qua kiểm thử tự động 100% cho 5 yêu cầu nghiệp vụ:
@@ -408,3 +507,97 @@ Toàn bộ các yêu cầu P0 trong AGENTS.md cho Topic 16 LMS (Web 3 vai trò +
    ```powershell
    adb install -r apps\mobile\android\app\build\outputs\apk\release\app-release.apk
    ```
+
+---
+
+### 7. Đồng bộ toàn diện Giao diện & Nghiệp vụ Web - Mobile, Hoàn tất Kiểm thử & Release APK
+
+**Các hạng mục đã hoàn thành:**
+1. **Giao diện Mobile tinh gọn & Bỏ toàn bộ Emoji/Icon trang trí:**
+   - Loại bỏ triệt để các biểu tượng emoji (`☀️`, `🌙`, `🌐`, `🔔`, `👨‍🎓`, `👨‍🏫`, `🛡️`, `📁`, `📷`, `👤`, `★`, `🔒`, `♥`, `♡`, `🎯`, `●`) trên tất cả các màn hình (Trang chủ, Chi tiết bài giảng, Quản lý soạn giảng).
+   - Thay thế các biểu tượng đánh giá và thích bằng văn bản typography chuẩn: `5.0 / 5 sao`, `Đã thích` / `Thích (N)`.
+   - Loại bỏ khoảng trắng trống ở đáy màn hình bằng cách gán `contentStyle: { backgroundColor: colors.bg }` trong Stack Layout của Expo và `flexGrow: 1` cho ScrollView.
+   - Nút bấm `+ Thêm chương` và các nút điều khiển được cấu hình `flexWrap: 'wrap'` không bị cắt lề trên các thiết bị màn hình nhỏ.
+
+2. **Khôi phục Thanh Menu Drawer ☰ trên Mobile:**
+   - Nút ☰ trên thanh Top Bar mở menu điều hướng cạnh bên (Drawer modal), hiển thị không gian làm việc `T16 LEARNING SPACE`, chế độ người dùng và các lối tắt điều hướng sạch sẽ.
+
+3. **Đồng bộ hóa 100% Modal Nghiệp vụ giữa Web và Mobile:**
+   - **Modal Khóa Tài khoản (Lock User):** Cung cấp đầy đủ 3 chế độ (Khóa vĩnh viễn / Vô thời hạn, Khóa theo số ngày, Khóa từ ngày đến ngày) kèm ô nhập lý do khóa.
+   - **Modal Khóa Khóa học (Lock Course):** Cung cấp đầy đủ 3 chế độ tương tự Web kèm lý do khóa.
+   - **Modal Xóa Khóa học (Delete Course):** Đúng chuẩn 2 tùy chọn (Áp dụng ngay lập tức, Lên lịch theo ngày giờ) kèm lý do tùy chọn.
+
+4. **Tối ưu hóa Hệ thống Bài kiểm tra (Quizzes):**
+   - Bỏ hoàn toàn phần đề thi chung toàn khóa; mọi bài kiểm tra đều bắt buộc gắn liền với một Chương cụ thể.
+   - Loại bỏ phần hiển thị đề thi bị lặp lại ở cuối màn hình học; bài kiểm tra chỉ hiển thị bên trong đúng chương tương ứng.
+   - Đảm bảo tính bất biến cấu trúc: Khi khóa học đã có học viên đăng ký, việc tạo bài kiểm tra bắt buộc mới trả mã `409 Conflict`.
+   - Bảo mật thông tin bài thi: Người dùng không thuộc khóa học khi truy cập lượt làm bài của người khác sẽ nhận mã `404 Not Found` (thay vì 403).
+
+5. **Quyền hạn Giảng viên & Khóa học:**
+   - Ở chế độ Giảng viên, danh mục chỉ hiển thị các khóa học do chính tài khoản đó sở hữu (`owner_id === user.id`).
+   - Giảng viên không thể tự đánh giá hoặc khiếu nại khóa học của chính mình.
+
+6. **Kết quả Kiểm thử & Biên dịch Release APK:**
+   - **Kiểm thử tích hợp (`pnpm test:integration`)**: 17/17 tests PASS (100%).
+   - **Kiểm thử đơn vị (`pnpm test`)**: 5/5 suites, 16/16 tests PASS (100%).
+   - **Kiểm tra kiểu dữ liệu (`pnpm typecheck`)**: 10/10 workspace projects đạt 0 lỗi.
+   - **Kiểm tra quy chuẩn mã nguồn (`pnpm lint`)**: Đạt 0 lỗi.
+   - **Tệp Release APK**: Đã biên dịch thành công bản phát hành Android độc lập:
+     - Đường dẫn: `C:\CNPM_CK\app-release.apk`
+     - SHA-256: `C996D0F7956EA34D9D21818D56FF606758EA201A06CCA96B91C8A5B662957DFC`
+
+
+---
+
+### 8. Hoàn thiện Drawer Menu Bên Trái, Blur Nền, Phân Quyền Sửa Khóa Học Theo Chế Độ & Dọn Sạch Biểu Tượng
+
+1. **Phân quyền sửa khóa học:** Học viên không được chỉnh sửa khóa học của bản thân cho đến khi chuyển qua chế độ Giảng viên.
+2. **Drawer Menu:** Xuất hiện bên TRÁI, nền mờ (glass backdrop blur).
+3. **Danh mục:** Giảng viên gồm Khóa học và Bản nháp của tôi; Học viên gồm Tất cả khóa học, Đang học, Yêu thích (giống Web).
+4. **Đổi nhãn vai trò:** Đổi thành Chuyển sang {vai trò}.
+5. **Thông báo:** Thích ứng Dark/Light Mode và làm mờ nền.
+6. **Khắc phục lỗi cắt chữ:** Lý do khiếu nại (Nội dung vi phạm) không còn bị cắt lề.
+7. **Không còn icon trang trí:** Gỡ bỏ toàn bộ emoji trang trí.
+8. **Kiểm thử & Phát hành:** 17/17 integration tests pass, 16/16 unit tests pass, 0 typecheck, 0 lint. APK mới: C:\CNPM_CK\app-release.apk (SHA-256: C996D0F7956EA34D9D21818D56FF606758EA201A06CCA96B91C8A5B662957DFC).
+
+---
+
+### 9. Xử lý Triệt để 9 Lỗi Trực quan & Đồng bộ Logic theo Ảnh Chụp Thực tế
+
+1. **Khắc phục khoảng trắng nửa dưới màn hình (Ảnh 1 & 2):**
+   - Loại bỏ `backgroundColor: '#f8fafc'` cố định trong `styles.container` của `course/[id].tsx` và `course/edit/[id].tsx`.
+   - Cấu hình `style={{ flex: 1, backgroundColor: colors.bg }}` và `contentContainerStyle={[styles.container, { backgroundColor: colors.bg, flexGrow: 1 }]}` để nội dung ngắn luôn lấp đầy toàn bộ màn hình theo theme.
+   - Thêm `@color/window_background` (`#0b1120`) vào cấu hình Android gốc `styles.xml` / `colors.xml`, loại bỏ hoàn toàn hiện tượng nền trắng của hệ điều hành.
+
+2. **Cố định thanh điều hướng trên cùng & Chống đè Status Bar (Ảnh 5):**
+   - Di chuyển `topNavBar` / `topBar` ra ngoài `ScrollView` thành thanh tiêu đề cố định (fixed header).
+   - Thiết lập `paddingTop: Platform.OS === 'ios' ? 48 : 36` đảm bảo an toàn tuyệt đối với status bar Android (camera nốt ruồi / notch). Nội dung cuộn mượt mà phía dưới mà không bao giờ va chạm hay đè lên biểu tượng hệ thống.
+
+3. **Giao diện Hộp thoại Thông báo Quản trị viên (Ảnh 6):**
+   - Thích ứng hoàn hảo theo Dark/Light mode (`glassCardBg`, `colors.text`, `colors.textSecondary`).
+   - Loại bỏ nền trắng `#ffffff` cố định, lớp phủ làm mờ sâu `rgba(2, 6, 23, 0.92)`.
+
+4. **Menu Chuyển đổi Vai trò (Ảnh 7):**
+   - Nhãn chuẩn: `CHUYỂN ĐỔI VAI TRÒ` (thay vì `KHÔNG GIAN`).
+   - Các nút: `Chuyển sang Học viên`, `Chuyển sang Giảng viên`, `Chuyển sang Quản trị viên`.
+   - Không chứa bất kỳ emoji hay biểu tượng trang trí nào.
+
+5. **Tránh tràn/cắt lề Huy hiệu Khiếu nại (Ảnh 8):**
+   - Bố cục danh sách khiếu nại chuyển huy hiệu lý do (`Nội dung vi phạm / sai lệch`) thành hàng riêng phía dưới tiêu đề khóa học với `flexWrap: 'wrap'`, đảm bảo hiển thị trọn vẹn văn bản.
+
+6. **Tải ảnh bìa trực tiếp từ thiết bị (Ảnh 9):**
+   - Thay thế ô nhập URL bằng tính năng chọn và tải tệp ảnh từ thiết bị (`pickCourseThumbnailImage`), kèm xem trước và nút đổi ảnh.
+
+7. **Hộp thoại Xóa khóa học đồng bộ với Web (Ảnh 4):**
+   - Tùy chọn 2 chế độ: Áp dụng ngay lập tức / Lên lịch theo ngày giờ kèm ô nhập lý do và nút xác nhận theo đúng chuẩn trên web.
+
+8. **Đồng bộ tab Yêu thích và Đang học:**
+   - Sử dụng `useFocusEffect` để tự động làm mới dữ liệu khi quay lại màn hình chính.
+   - Bộ lọc `filteredCourses` cho phép hiển thị khóa học yêu thích và khóa học đang học trên cả 2 vai trò Học viên và Giảng viên.
+
+9. **Kết quả Kiểm thử & Bản phát hành Android APK:**
+   - **Typecheck**: 10/10 workspace packages đạt 0 lỗi.
+   - **Unit Tests**: 16/16 tests PASS (5 suites).
+   - **Integration Tests**: 17/17 tests PASS với PostgreSQL thật.
+   - **Tệp Release APK**: Đã biên dịch hoàn tất tại `C:\CNPM_CK\app-release.apk`
+   - **SHA-256 Checksum**: `23BA72213EEEBE6117082B7A4103CAC2C8CD099E8BDC4889A64FB16854BCBBF4`

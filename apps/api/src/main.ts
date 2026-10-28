@@ -9,7 +9,7 @@ async function main(): Promise<void> {
   const storageConfig = storageConfigSchema.parse(process.env);
   const db = await createDataSource(config.DATABASE_URL).initialize();
   const storage = new ObjectStorage(storageConfig);
-  try { await storage.configureBrowser(config.WEB_ORIGIN); } catch (e) { /* ignore */ }
+  try { await storage.configureBrowser(config.WEB_ORIGIN); } catch { /* ignore */ }
   const app = await createApp(config, db, storage);
   if (config.NODE_ENV !== 'production') SwaggerModule.setup('api/docs', app, createOpenApi(app));
   const close = async () => { await app.close(); if (db.isInitialized) await db.destroy(); };

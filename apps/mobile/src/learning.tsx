@@ -2,13 +2,15 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   AppState,
+  LayoutAnimation,
   Modal,
-  Pressable,
+  Platform,
   StyleSheet,
   Switch,
   Text,
   TextInput,
   TouchableOpacity,
+  UIManager,
   View,
 } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
@@ -17,12 +19,26 @@ import { components, ProgressTracker } from '@lms/api-client';
 import { session } from './session';
 import { useTheme } from './theme';
 
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+const animateTransition = () => {
+  LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+};
+
 type Playback = components['schemas']['PlaybackDto'];
 type Transcript = components['schemas']['TranscriptDto'];
 type Summary = components['schemas']['SummaryDto'];
 type Chat = components['schemas']['ChatDto'];
 type Quiz = components['schemas']['QuizDto'] & { time_limit_minutes?: number | null };
-type Attempt = components['schemas']['AttemptDto'];
+type Attempt = components['schemas']['AttemptDto'] & {
+  user_name?: string;
+  user_email?: string;
+  submitted_at?: string | null;
+  instructor_feedback?: string | null;
+};
+type FeedbackItem = components['schemas']['FeedbackItemDto'];
 
 const formatTime = (s: number) => {
   const mins = Math.floor(s / 60);
@@ -40,13 +56,16 @@ export function NativeLesson({
   playback: Playback;
   onSeek?: () => void;
 }) {
+  const { colors } = useTheme();
   const player = useVideoPlayer(playback.url);
   const [tab, setTab] = useState<'summary' | 'transcript' | 'chat'>('summary');
+  const [collapsedTabs, setCollapsedTabs] = useState(false);
   const [transcript, setTranscript] = useState<Transcript | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [history, setHistory] = useState<Chat[]>([]);
   const [question, setQuestion] = useState('');
   const [message, setMessage] = useState('');
+  const [progressStatus, setProgressStatus] = useState('');
   const [busy, setBusy] = useState(false);
 
   const tracker = useRef<ProgressTracker | null>(null);
@@ -54,7 +73,7 @@ export function NativeLesson({
 
   useEffect(() => {
     if (!session) return;
-    const tracking = new ProgressTracker(session, playback.lesson_id, randomUUID, setMessage);
+    const tracking = new ProgressTracker(session, playback.lesson_id, randomUUID, setProgressStatus);
     tracker.current = tracking;
 
     let resume: number | null = null;
@@ -157,7 +176,7 @@ export function NativeLesson({
         {list.map(c => (
           <TouchableOpacity
             key={c.chunk_id}
-            style={styles.citationPill}
+            style={[styles.citationPill, { backgroundColor: colors.primaryLight, borderColor: colors.primary }]}
             onPress={() => {
               if (c.media_version === playback.media_version) {
                 seek(c.start_sec);
@@ -166,8 +185,8 @@ export function NativeLesson({
               }
             }}
           >
-            <Text style={styles.citationTime}>▷ {formatTime(c.start_sec)}</Text>
-            <Text numberOfLines={2} style={styles.citationExcerpt}>
+            <Text style={[styles.citationTime, { color: colors.primary }]}>▷ {formatTime(c.start_sec)}</Text>
+            <Text numberOfLines={2} style={[styles.citationExcerpt, { color: colors.text }]}>
               {c.excerpt}
             </Text>
           </TouchableOpacity>
@@ -203,63 +222,103 @@ export function NativeLesson({
   };
 
   return (
-    <View style={styles.lessonCard}>
+    <View style={[styles.lessonCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
       {/* Video Player */}
       <View style={styles.videoWrapper}>
         <VideoView player={player} nativeControls style={styles.videoPlayer} />
       </View>
 
       {message ? (
-        <View style={styles.lessonAlert}>
-          <Text style={styles.lessonAlertText}>{message}</Text>
+        <View style={[styles.lessonAlert, { backgroundColor: 'rgba(239, 68, 68, 0.12)', borderColor: 'rgba(239, 68, 68, 0.35)', borderWidth: 1 }]}>
+          <Text style={[styles.lessonAlertText, { color: colors.danger }]}>{message}</Text>
         </View>
-      ) : (
-        <Text style={styles.statusHint}>Tiến độ xem video được ghi nhận tự động.</Text>
-      )}
+      ) : null}
+
+      <View style={[styles.progressStatusBadge, { backgroundColor: colors.cardElevated, borderColor: colors.border }]}>
+        <View style={[styles.progressStatusDot, { backgroundColor: colors.primary }]} />
+        <Text style={[styles.statusHint, { color: colors.textSecondary }]}>
+          {progressStatus || 'Tiến độ xem video được ghi nhận tự động.'}
+        </Text>
+      </View>
 
       {/* Tabs navigation */}
-      <View style={styles.tabBar}>
-        <TouchableOpacity
-          style={[styles.tabItem, tab === 'summary' && styles.tabItemActive]}
-          onPress={() => setTab('summary')}
-        >
-          <Text style={[styles.tabText, tab === 'summary' && styles.tabTextActive]}>
-            Tóm tắt bài
-          </Text>
-        </TouchableOpacity>
+      <View style={[styles.tabBar, { borderBottomColor: colors.border, justifyContent: 'space-between', alignItems: 'center' }]}>
+        <View style={{ flexDirection: 'row', flex: 1 }}>
+          <TouchableOpacity
+            style={[styles.tabItem, tab === 'summary' && { borderBottomColor: colors.primary }]}
+            onPress={() => {
+              animateTransition();
+              setTab('summary');
+              setCollapsedTabs(false);
+            }}
+          >
+            <Text style={[styles.tabText, { color: tab === 'summary' ? colors.primary : colors.textMuted }, tab === 'summary' && { fontWeight: '700' }]}>
+              Tóm tắt bài
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.tabItem, tab === 'transcript' && { borderBottomColor: colors.primary }]}
+            onPress={() => {
+              animateTransition();
+              setTab('transcript');
+              setCollapsedTabs(false);
+            }}
+          >
+            <Text style={[styles.tabText, { color: tab === 'transcript' ? colors.primary : colors.textMuted }, tab === 'transcript' && { fontWeight: '700' }]}>
+              Transcript
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.tabItem, tab === 'chat' && { borderBottomColor: colors.primary }]}
+            onPress={() => {
+              animateTransition();
+              setTab('chat');
+              setCollapsedTabs(false);
+            }}
+          >
+            <Text style={[styles.tabText, { color: tab === 'chat' ? colors.primary : colors.textMuted }, tab === 'chat' && { fontWeight: '700' }]}>
+              Hỏi đáp AI
+            </Text>
+          </TouchableOpacity>
+        </View>
 
         <TouchableOpacity
-          style={[styles.tabItem, tab === 'transcript' && styles.tabItemActive]}
-          onPress={() => setTab('transcript')}
+          style={{
+            paddingVertical: 4,
+            paddingHorizontal: 8,
+            borderRadius: 6,
+            backgroundColor: colors.cardElevated,
+            marginRight: 8,
+          }}
+          onPress={() => {
+            animateTransition();
+            setCollapsedTabs(prev => !prev);
+          }}
         >
-          <Text style={[styles.tabText, tab === 'transcript' && styles.tabTextActive]}>
-            Transcript
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.tabItem, tab === 'chat' && styles.tabItemActive]}
-          onPress={() => setTab('chat')}
-        >
-          <Text style={[styles.tabText, tab === 'chat' && styles.tabTextActive]}>
-            Hỏi đáp AI
+          <Text style={{ fontSize: 11, fontWeight: '700', color: colors.primary }}>
+            {collapsedTabs ? 'Mở rộng ▼' : 'Thu gọn ▲'}
           </Text>
         </TouchableOpacity>
       </View>
+
+      {!collapsedTabs && (
+        <>
 
       {/* TAB CONTENT: Summary */}
       {tab === 'summary' && (
         <View style={styles.tabPanel}>
           {summary?.status === 'READY' ? (
             summary.sections.map((sec, idx) => (
-              <View key={idx} style={styles.summarySection}>
-                <Text style={styles.summaryAnswer}>{sec.answer}</Text>
+              <View key={idx} style={[styles.summarySection, { backgroundColor: colors.cardElevated }]}>
+                <Text style={[styles.summaryAnswer, { color: colors.text }]}>{sec.answer}</Text>
                 {renderCitations(sec.citations)}
               </View>
             ))
           ) : (
             <View style={styles.emptyTabBox}>
-              <Text style={styles.emptyTabText}>
+              <Text style={[styles.emptyTabText, { color: colors.textMuted }]}>
                 Tóm tắt toàn bài đang được chuẩn bị. Bạn có thể xem video trong lúc chờ.
               </Text>
             </View>
@@ -274,18 +333,18 @@ export function NativeLesson({
             transcript.segments.map((seg, idx) => (
               <TouchableOpacity
                 key={idx}
-                style={styles.transcriptRow}
+                style={[styles.transcriptRow, { borderBottomColor: colors.border }]}
                 onPress={() => seek(seg.start_sec)}
               >
-                <View style={styles.timestampBadge}>
-                  <Text style={styles.timestampBadgeText}>▷ {formatTime(seg.start_sec)}</Text>
+                <View style={[styles.timestampBadge, { backgroundColor: colors.cardElevated }]}>
+                  <Text style={[styles.timestampBadgeText, { color: colors.primary }]}>▷ {formatTime(seg.start_sec)}</Text>
                 </View>
-                <Text style={styles.transcriptText}>{seg.text}</Text>
+                <Text style={[styles.transcriptText, { color: colors.text }]}>{seg.text}</Text>
               </TouchableOpacity>
             ))
           ) : (
             <View style={styles.emptyTabBox}>
-              <Text style={styles.emptyTabText}>
+              <Text style={[styles.emptyTabText, { color: colors.textMuted }]}>
                 Transcript đang được AI trích xuất và đồng bộ timestamp...
               </Text>
             </View>
@@ -296,7 +355,7 @@ export function NativeLesson({
       {/* TAB CONTENT: AI Chat */}
       {tab === 'chat' && (
         <View style={styles.tabPanel}>
-          <Text style={styles.chatHint}>
+          <Text style={[styles.chatHint, { color: colors.textMuted }]}>
             Hỏi bất kỳ điều gì về bài học này. Nhấn nguồn trích dẫn để tua video xem lại.
           </Text>
 
@@ -305,13 +364,13 @@ export function NativeLesson({
             {history.map(msg => (
               <View key={msg.id} style={styles.chatMessagePair}>
                 {/* User Question */}
-                <View style={styles.chatQuestionBubble}>
+                <View style={[styles.chatQuestionBubble, { backgroundColor: colors.primary }]}>
                   <Text style={styles.chatQuestionText}>{msg.question}</Text>
                 </View>
 
                 {/* AI Answer */}
-                <View style={styles.chatAnswerBubble}>
-                  <Text style={styles.chatAnswerText}>{msg.answer}</Text>
+                <View style={[styles.chatAnswerBubble, { backgroundColor: colors.cardElevated }]}>
+                  <Text style={[styles.chatAnswerText, { color: colors.text }]}>{msg.answer}</Text>
                   {renderCitations(msg.citations)}
                 </View>
               </View>
@@ -321,16 +380,16 @@ export function NativeLesson({
           {/* Chat Input */}
           <View style={styles.chatInputRow}>
             <TextInput
-              style={styles.chatInput}
+              style={[styles.chatInput, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
               placeholder="Bạn muốn hiểu rõ phần nào?"
-              placeholderTextColor="#9ca3af"
+              placeholderTextColor={colors.textMuted}
               multiline
               maxLength={1500}
               value={question}
               onChangeText={setQuestion}
             />
             <TouchableOpacity
-              style={[styles.chatSendBtn, (!question.trim() || busy) && styles.buttonDisabled]}
+              style={[styles.chatSendBtn, { backgroundColor: colors.primary }, (!question.trim() || busy) && styles.buttonDisabled]}
               onPress={handleSendQuestion}
               disabled={!question.trim() || busy}
             >
@@ -342,6 +401,8 @@ export function NativeLesson({
             </TouchableOpacity>
           </View>
         </View>
+      )}
+        </>
       )}
     </View>
   );
@@ -361,6 +422,10 @@ export function NativeQuiz({
   isOwner: boolean;
   onResult: () => void;
 }) {
+  const { colors, isDark } = useTheme();
+  const glassBackdrop = isDark ? 'rgba(2, 6, 23, 0.72)' : 'rgba(15, 23, 42, 0.45)';
+  const glassCardBg = isDark ? 'rgba(15, 23, 42, 0.94)' : 'rgba(255, 255, 255, 0.96)';
+  const glassCardBorder = isDark ? 'rgba(148, 163, 184, 0.22)' : 'rgba(226, 232, 240, 0.9)';
   const [attempt, setAttempt] = useState<Attempt | null>(null);
   const [answers, setAnswers] = useState<Record<string, MobileAnswer>>({});
   const [message, setMessage] = useState('');
@@ -368,12 +433,12 @@ export function NativeQuiz({
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
 
   // Student attempts history
-  const [myAttempts, setMyAttempts] = useState<any[]>([]);
+  const [myAttempts, setMyAttempts] = useState<Attempt[]>([]);
   const [showHistory, setShowHistory] = useState(false);
 
   // Instructor grading mode
-  const [submissions, setSubmissions] = useState<any[]>([]);
-  const [gradingModal, setGradingModal] = useState<any | null>(null);
+  const [submissions, setSubmissions] = useState<Attempt[]>([]);
+  const [gradingModal, setGradingModal] = useState<Attempt | null>(null);
   const [gradingScore, setGradingScore] = useState<string>('70');
   const [gradingPassed, setGradingPassed] = useState<boolean>(true);
   const [gradingFeedback, setGradingFeedback] = useState<string>('');
@@ -382,13 +447,14 @@ export function NativeQuiz({
   const loadMyAttempts = useCallback(async () => {
     if (isOwner || !session) return;
     try {
-      const { data } = await session.api.GET('/api/v1/quizzes/{id}/my-attempts' as any, {
+      const { data } = await session.api.GET('/api/v1/quizzes/{id}/my-attempts', {
         params: { path: { id: quiz.id } },
       });
       if (data && Array.isArray(data)) {
-        setMyAttempts(data);
-        if (data.length > 0) {
-          setAttempt(prev => (prev?.status === 'IN_PROGRESS' ? prev : data[0]));
+        const list = data as unknown as Attempt[];
+        setMyAttempts(list);
+        if (list.length > 0) {
+          setAttempt(prev => (prev?.status === 'IN_PROGRESS' ? prev : list[0]));
         }
       }
     } catch {
@@ -399,11 +465,11 @@ export function NativeQuiz({
   const loadSubmissions = useCallback(async () => {
     if (!isOwner || !session) return;
     try {
-      const { data } = await session.api.GET('/api/v1/quizzes/{id}/submissions' as any, {
+      const { data } = await session.api.GET('/api/v1/quizzes/{id}/submissions', {
         params: { path: { id: quiz.id } },
       });
       if (data && Array.isArray(data)) {
-        setSubmissions(data);
+        setSubmissions(data as unknown as Attempt[]);
       }
     } catch {
       // Bỏ qua lỗi
@@ -500,12 +566,12 @@ export function NativeQuiz({
     setGradingBusy(true);
     try {
       const scoreNum = parseFloat(gradingScore) || 0;
-      const { data, error } = await session.api.POST('/api/v1/attempts/{id}/grade' as any, {
+      const { error } = await session.api.POST('/api/v1/attempts/{id}/grade', {
         params: { path: { id: gradingModal.id } },
         body: {
           score: scoreNum,
           passed: gradingPassed,
-          feedback: gradingFeedback.trim(),
+          instructor_feedback: gradingFeedback.trim(),
         },
       });
       if (error) throw new Error(error.message);
@@ -519,12 +585,17 @@ export function NativeQuiz({
   };
 
   return (
-    <View style={styles.quizCard}>
+    <View style={[styles.quizCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
       {/* Quiz Header */}
       <View style={styles.quizHeader}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.quizTitle}>{quiz.title}</Text>
-          <Text style={styles.quizMeta}>
+          {quiz.module_id ? (
+            <Text style={{ fontSize: 10, fontWeight: '700', color: colors.primary, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>
+              Bài kiểm tra chương
+            </Text>
+          ) : null}
+          <Text style={[styles.quizTitle, { color: colors.text }]}>{quiz.title}</Text>
+          <Text style={[styles.quizMeta, { color: colors.textMuted }]}>
             {quiz.questions.length} câu hỏi · Ngưỡng đạt {quiz.pass_threshold}% · Tối đa{' '}
             {quiz.max_attempts} lượt
             {quiz.time_limit_minutes ? ` · Thời gian: ${quiz.time_limit_minutes} phút` : ''}
@@ -533,37 +604,54 @@ export function NativeQuiz({
 
         {/* Timed countdown timer badge */}
         {timeLeft !== null && (
-          <View style={styles.timerBadge}>
-            <Text style={styles.timerText}>
-              ⏱ {formatTime(timeLeft)}
+          <View
+            style={[
+              styles.timerBadge,
+              {
+                backgroundColor: isDark ? 'rgba(239, 68, 68, 0.16)' : '#fef2f2',
+                borderColor: isDark ? 'rgba(239, 68, 68, 0.4)' : '#fca5a5',
+              },
+            ]}
+          >
+            <Text style={[styles.timerText, { color: isDark ? '#f87171' : '#b91c1c' }]}>
+              Còn: {formatTime(timeLeft)}
             </Text>
           </View>
         )}
       </View>
 
       {message ? (
-        <View style={styles.lessonAlert}>
-          <Text style={styles.lessonAlertText}>{message}</Text>
+        <View
+          style={[
+            styles.lessonAlert,
+            {
+              backgroundColor: isDark ? 'rgba(239, 68, 68, 0.14)' : '#fef2f2',
+              borderColor: isDark ? 'rgba(239, 68, 68, 0.35)' : '#fca5a5',
+              borderWidth: 1,
+            },
+          ]}
+        >
+          <Text style={[styles.lessonAlertText, { color: isDark ? '#fca5a5' : '#991b1b' }]}>{message}</Text>
         </View>
       ) : null}
 
       {/* INSTRUCTOR MODE: Submissions & Grading */}
       {isOwner ? (
         <View style={styles.instructorGradingSection}>
-          <Text style={styles.sectionSubtitle}>
+          <Text style={[styles.sectionSubtitle, { color: colors.text }]}>
             Quản trị & Chấm bài học viên ({submissions.length} bài nộp)
           </Text>
 
           {submissions.length === 0 ? (
-            <Text style={styles.emptyNotice}>Chưa có học viên nào nộp bài kiểm tra này.</Text>
+            <Text style={[styles.emptyNotice, { color: colors.textMuted }]}>Chưa có học viên nào nộp bài kiểm tra này.</Text>
           ) : (
             submissions.map(sub => (
-              <View key={sub.id} style={styles.submissionRow}>
+              <View key={sub.id} style={[styles.submissionRow, { borderBottomColor: colors.border }]}>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.submissionName}>
+                  <Text style={[styles.submissionName, { color: colors.text }]}>
                     {sub.user_name || 'Học viên'}
                   </Text>
-                  <Text style={styles.submissionMeta}>
+                  <Text style={[styles.submissionMeta, { color: colors.textMuted }]}>
                     Email: {sub.user_email} · Lượt {sub.attempt_number} ·{' '}
                     {sub.submitted_at
                       ? new Date(sub.submitted_at).toLocaleString('vi-VN')
@@ -575,12 +663,12 @@ export function NativeQuiz({
                       sub.passed ? styles.textSuccess : styles.textDanger,
                     ]}
                   >
-                    Điểm: {sub.score?.toFixed(1) ?? '--'} ({sub.passed ? 'Đạt' : 'Chưa đạt'})
+                    Điểm: {sub.score != null ? Number(sub.score).toFixed(1) : '--'} ({sub.passed ? 'Đạt' : 'Chưa đạt'})
                   </Text>
                 </View>
 
                 <TouchableOpacity
-                  style={styles.gradeButton}
+                  style={[styles.gradeButton, { backgroundColor: colors.cardElevated }]}
                   onPress={() => {
                     setGradingModal(sub);
                     setGradingScore(String(sub.score ?? 70));
@@ -588,7 +676,7 @@ export function NativeQuiz({
                     setGradingFeedback(sub.instructor_feedback || '');
                   }}
                 >
-                  <Text style={styles.gradeButtonText}>Chấm bài</Text>
+                  <Text style={[styles.gradeButtonText, { color: colors.primary }]}>Chấm bài</Text>
                 </TouchableOpacity>
               </View>
             ))
@@ -600,20 +688,20 @@ export function NativeQuiz({
           {/* Active quiz in progress */}
           {attempt?.status === 'IN_PROGRESS' ? (
             <View style={styles.questionsContainer}>
-              <Text style={styles.attemptInfo}>
+              <Text style={[styles.attemptInfo, { color: colors.textSecondary }]}>
                 Lượt làm thứ {attempt.attempt_number}. Vui lòng trả lời các câu hỏi bên dưới:
               </Text>
 
               {quiz.questions.map((q, idx) => {
-                const qType = (q as any).question_type || 'MULTIPLE_CHOICE';
+                const qType = q.question_type || 'MULTIPLE_CHOICE';
                 return (
-                  <View key={q.id} style={styles.questionCard}>
+                  <View key={q.id} style={[styles.questionCard, { backgroundColor: colors.cardElevated }]}>
                     <View style={styles.questionCardHeader}>
-                      <Text style={styles.questionNumberText}>
+                      <Text style={[styles.questionNumberText, { color: colors.text }]}>
                         Câu {idx + 1}: {q.text}
                       </Text>
-                      <View style={styles.qTypeBadge}>
-                        <Text style={styles.qTypeBadgeText}>
+                      <View style={[styles.qTypeBadge, { backgroundColor: colors.border }]}>
+                        <Text style={[styles.qTypeBadgeText, { color: colors.textSecondary }]}>
                           {qType === 'ESSAY'
                             ? 'Tự luận'
                             : qType === 'FILE_UPLOAD'
@@ -633,7 +721,8 @@ export function NativeQuiz({
                               key={opt.id}
                               style={[
                                 styles.optionRow,
-                                isChecked && styles.optionRowChecked,
+                                { backgroundColor: colors.card, borderColor: colors.border },
+                                isChecked && { borderColor: colors.primary, backgroundColor: colors.primaryLight },
                               ]}
                               onPress={() =>
                                 setAnswers(a => ({
@@ -642,10 +731,10 @@ export function NativeQuiz({
                                 }))
                               }
                             >
-                              <Text style={styles.radioSymbol}>
+                              <Text style={[styles.radioSymbol, { color: colors.primary }]}>
                                 {isChecked ? '●' : '○'}
                               </Text>
-                              <Text style={styles.optionText}>{opt.text}</Text>
+                              <Text style={[styles.optionText, { color: colors.text, flex: 1 }]}>{opt.text}</Text>
                             </TouchableOpacity>
                           );
                         })}
@@ -655,9 +744,9 @@ export function NativeQuiz({
                     {/* Essay textarea */}
                     {qType === 'ESSAY' && (
                       <TextInput
-                        style={styles.essayInput}
+                        style={[styles.essayInput, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
                         placeholder="Nhập nội dung bài làm tự luận của bạn..."
-                        placeholderTextColor="#9ca3af"
+                        placeholderTextColor={colors.textMuted}
                         multiline
                         value={answers[q.id]?.text_response || ''}
                         onChangeText={txt =>
@@ -672,9 +761,9 @@ export function NativeQuiz({
                     {/* File upload input */}
                     {qType === 'FILE_UPLOAD' && (
                       <TextInput
-                        style={styles.fileInput}
+                        style={[styles.fileInput, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
                         placeholder="Nhập tên tài liệu hoặc liên kết nộp bài..."
-                        placeholderTextColor="#9ca3af"
+                        placeholderTextColor={colors.textMuted}
                         value={answers[q.id]?.file_name || ''}
                         onChangeText={fn =>
                           setAnswers(a => ({
@@ -689,7 +778,7 @@ export function NativeQuiz({
               })}
 
               <TouchableOpacity
-                style={[styles.primaryButton, busy && styles.buttonDisabled]}
+                style={[styles.primaryButton, { backgroundColor: colors.primary }, busy && styles.buttonDisabled]}
                 onPress={submitQuiz}
                 disabled={busy}
               >
@@ -707,26 +796,32 @@ export function NativeQuiz({
                 <View
                   style={[
                     styles.resultCard,
-                    attempt.passed ? styles.resultCardPass : styles.resultCardFail,
+                    attempt.passed
+                      ? { backgroundColor: colors.primaryLight, borderColor: colors.primary, borderWidth: 1 }
+                      : {
+                          backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : '#fef2f2',
+                          borderColor: isDark ? 'rgba(239, 68, 68, 0.4)' : '#fca5a5',
+                          borderWidth: 1,
+                        },
                   ]}
                 >
                   <Text
                     style={[
                       styles.resultStatus,
-                      attempt.passed ? styles.textSuccess : styles.textDanger,
+                      attempt.passed ? { color: colors.primary } : { color: isDark ? '#f87171' : '#dc2626' },
                     ]}
                   >
                     {attempt.passed ? '✓ Bạn đã vượt qua bài kiểm tra!' : '✕ Chưa đạt yêu cầu'}
                   </Text>
-                  <Text style={styles.resultDetails}>
-                    Điểm số: {attempt.score?.toFixed(1)} / 100 điểm ({attempt.correct_count}/
+                  <Text style={[styles.resultDetails, { color: colors.text }]}>
+                    Điểm số: {attempt.score != null ? Number(attempt.score).toFixed(1) : '--'} / 100 điểm ({attempt.correct_count}/
                     {attempt.question_count} câu đúng)
                   </Text>
-                  {(attempt as any).instructor_feedback ? (
-                    <View style={styles.feedbackNote}>
-                      <Text style={styles.feedbackNoteTitle}>Nhận xét của giảng viên:</Text>
-                      <Text style={styles.feedbackNoteContent}>
-                        {(attempt as any).instructor_feedback}
+                  {attempt.instructor_feedback ? (
+                    <View style={[styles.feedbackNote, { borderTopColor: colors.border }]}>
+                      <Text style={[styles.feedbackNoteTitle, { color: colors.text }]}>Nhận xét của giảng viên:</Text>
+                      <Text style={[styles.feedbackNoteContent, { color: colors.textSecondary }]}>
+                        {attempt.instructor_feedback}
                       </Text>
                     </View>
                   ) : null}
@@ -737,7 +832,7 @@ export function NativeQuiz({
               {(!attempt || attempt.status === 'SUBMITTED') &&
                 (!attempt || attempt.attempt_number < quiz.max_attempts) && (
                   <TouchableOpacity
-                    style={[styles.primaryButton, busy && styles.buttonDisabled]}
+                    style={[styles.primaryButton, { backgroundColor: colors.primary }, busy && styles.buttonDisabled]}
                     onPress={beginAttempt}
                     disabled={busy}
                   >
@@ -751,9 +846,12 @@ export function NativeQuiz({
               {myAttempts.length > 0 && (
                 <TouchableOpacity
                   style={styles.historyToggleBtn}
-                  onPress={() => setShowHistory(h => !h)}
+                  onPress={() => {
+                    animateTransition();
+                    setShowHistory(h => !h);
+                  }}
                 >
-                  <Text style={styles.historyToggleBtnText}>
+                  <Text style={[styles.historyToggleBtnText, { color: colors.primary }]}>
                     {showHistory ? 'Ẩn lịch sử làm bài ▲' : 'Xem lịch sử các lần làm bài ▼'}
                   </Text>
                 </TouchableOpacity>
@@ -762,8 +860,8 @@ export function NativeQuiz({
               {showHistory && (
                 <View style={styles.historyList}>
                   {myAttempts.map(att => (
-                    <View key={att.id} style={styles.historyItem}>
-                      <Text style={styles.historyItemHeader}>
+                    <View key={att.id} style={[styles.historyItem, { backgroundColor: colors.cardElevated }]}>
+                      <Text style={[styles.historyItemHeader, { color: colors.text }]}>
                         Lượt {att.attempt_number} ·{' '}
                         {att.submitted_at
                           ? new Date(att.submitted_at).toLocaleString('vi-VN')
@@ -772,13 +870,13 @@ export function NativeQuiz({
                       <Text
                         style={[
                           styles.historyItemScore,
-                          att.passed ? styles.textSuccess : styles.textDanger,
+                          att.passed ? { color: colors.primary } : styles.textDanger,
                         ]}
                       >
-                        {att.score?.toFixed(1)} điểm ({att.passed ? 'Đạt' : 'Chưa đạt'})
+                        {att.score != null ? Number(att.score).toFixed(1) : '--'} điểm ({att.passed ? 'Đạt' : 'Chưa đạt'})
                       </Text>
                       {att.instructor_feedback ? (
-                        <Text style={styles.historyItemFeedback}>
+                        <Text style={[styles.historyItemFeedback, { color: colors.textMuted }]}>
                           Nhận xét: {att.instructor_feedback}
                         </Text>
                       ) : null}
@@ -795,17 +893,17 @@ export function NativeQuiz({
       <Modal
         visible={Boolean(gradingModal)}
         transparent
-        animationType="slide"
+        animationType="fade"
         onRequestClose={() => setGradingModal(null)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+        <View style={[styles.modalOverlay, { backgroundColor: glassBackdrop }]}>
+          <View style={[styles.modalContent, { backgroundColor: glassCardBg, borderColor: glassCardBorder, borderWidth: 1 }]}>
             <View style={styles.modalHeader}>
               <View>
-                <Text style={styles.modalTitle}>
+                <Text style={[styles.modalTitle, { color: colors.text }]}>
                   Chấm bài: {gradingModal?.user_name || 'Học viên'}
                 </Text>
-                <Text style={styles.modalSubtitle}>
+                <Text style={[styles.modalSubtitle, { color: colors.textMuted }]}>
                   {gradingModal?.user_email} · Lượt {gradingModal?.attempt_number}
                 </Text>
               </View>
@@ -813,15 +911,15 @@ export function NativeQuiz({
                 style={styles.modalCloseBtn}
                 onPress={() => setGradingModal(null)}
               >
-                <Text style={styles.modalCloseBtnText}>✕</Text>
+                <Text style={[styles.modalCloseBtnText, { color: colors.textMuted }]}>✕</Text>
               </TouchableOpacity>
             </View>
 
             <View style={styles.gradingForm}>
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>Điểm số (0 - 100):</Text>
+                <Text style={[styles.label, { color: colors.text }]}>Điểm số (0 - 100):</Text>
                 <TextInput
-                  style={styles.input}
+                  style={[styles.input, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
                   keyboardType="numeric"
                   value={gradingScore}
                   onChangeText={setGradingScore}
@@ -829,28 +927,28 @@ export function NativeQuiz({
               </View>
 
               <View style={styles.switchRow}>
-                <Text style={styles.label}>Kết quả đạt bài kiểm tra:</Text>
+                <Text style={[styles.label, { color: colors.text }]}>Kết quả đạt bài kiểm tra:</Text>
                 <Switch
                   value={gradingPassed}
                   onValueChange={setGradingPassed}
-                  trackColor={{ true: '#21634f', false: '#cbd5e1' }}
+                  trackColor={{ true: '#10b981', false: '#cbd5e1' }}
                 />
               </View>
 
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>Nhận xét và góp ý cho học viên:</Text>
+                <Text style={[styles.label, { color: colors.text }]}>Nhận xét và góp ý cho học viên:</Text>
                 <TextInput
-                  style={[styles.input, styles.textArea]}
+                  style={[styles.input, styles.textArea, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
                   multiline
                   placeholder="Ghi nhận xét bài làm..."
-                  placeholderTextColor="#9ca3af"
+                  placeholderTextColor={colors.textMuted}
                   value={gradingFeedback}
                   onChangeText={setGradingFeedback}
                 />
               </View>
 
               <TouchableOpacity
-                style={[styles.primaryButton, gradingBusy && styles.buttonDisabled]}
+                style={[styles.primaryButton, { backgroundColor: colors.primary }, gradingBusy && styles.buttonDisabled]}
                 onPress={handleSaveGrade}
                 disabled={gradingBusy}
               >
@@ -874,11 +972,14 @@ export function NativeQuiz({
 export function NativeReviewsAndComplaints({
   courseId,
   isEnrolled,
+  isOwner,
 }: {
   courseId: string;
   isEnrolled: boolean;
+  isOwner?: boolean;
 }) {
-  const [reviews, setReviews] = useState<any[]>([]);
+  const { colors, isDark } = useTheme();
+  const [reviews, setReviews] = useState<FeedbackItem[]>([]);
   const [rating, setRating] = useState<number>(5);
   const [comment, setComment] = useState<string>('');
   const [busyReview, setBusyReview] = useState(false);
@@ -893,11 +994,11 @@ export function NativeReviewsAndComplaints({
   const loadFeedback = useCallback(async () => {
     if (!session) return;
     try {
-      const { data } = await session.api.GET('/api/v1/courses/{id}/feedback' as any, {
+      const { data } = await session.api.GET('/api/v1/courses/{id}/feedback', {
         params: { path: { id: courseId } },
       });
-      if (data && (data as any).reviews) {
-        setReviews((data as any).reviews);
+      if (data && data.reviews) {
+        setReviews(data.reviews);
       }
     } catch {
       // Bỏ qua lỗi
@@ -913,7 +1014,7 @@ export function NativeReviewsAndComplaints({
     setBusyReview(true);
     setReviewMessage('');
     try {
-      const { error } = await session.api.POST('/api/v1/courses/{id}/feedback' as any, {
+      const { error } = await session.api.POST('/api/v1/courses/{id}/feedback', {
         params: { path: { id: courseId } },
         body: { rating, comment: comment.trim() },
       });
@@ -936,7 +1037,7 @@ export function NativeReviewsAndComplaints({
     setBusyComplaint(true);
     setComplaintMessage('');
     try {
-      const { error } = await session.api.POST('/api/v1/courses/{id}/complaints' as any, {
+      const { error } = await session.api.POST('/api/v1/courses/{id}/complaints', {
         params: { path: { id: courseId } },
         body: {
           reason: complaintReason,
@@ -956,31 +1057,48 @@ export function NativeReviewsAndComplaints({
   return (
     <View style={styles.reviewsContainer}>
       {/* REVIEWS SECTION */}
-      <View style={styles.reviewSectionCard}>
-        <Text style={styles.sectionHeader}>Đánh giá khóa học</Text>
+      <View style={[styles.reviewSectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[styles.sectionHeader, { color: colors.text }]}>Đánh giá khóa học</Text>
 
-        {isEnrolled && (
-          <View style={styles.writeReviewBox}>
-            <Text style={styles.label}>Đánh giá của bạn:</Text>
-            {/* 5 Stars picker */}
+        {isOwner ? (
+          <View style={{ backgroundColor: colors.cardElevated, borderColor: colors.border, borderWidth: 1, borderStyle: 'dashed', borderRadius: 8, padding: 14, marginBottom: 16 }}>
+            <Text style={{ fontSize: 13, fontWeight: '700', color: colors.textSecondary }}>
+              Giảng viên không thể tự đánh giá khóa học của chính mình.
+            </Text>
+            <Text style={{ fontSize: 12, color: colors.textMuted, marginTop: 4, lineHeight: 18 }}>
+              Bạn có thể đọc các nhận xét và đánh giá từ học viên bên dưới để cải thiện chất lượng khóa học.
+            </Text>
+          </View>
+        ) : isEnrolled ? (
+          <View style={[styles.writeReviewBox, { backgroundColor: colors.cardElevated }]}>
+            <Text style={[styles.label, { color: colors.text }]}>Đánh giá của bạn ({rating} / 5 sao):</Text>
+            {/* 5 Stars picker buttons */}
             <View style={styles.starPickerRow}>
               {[1, 2, 3, 4, 5].map(star => (
                 <TouchableOpacity
                   key={star}
                   onPress={() => setRating(star)}
-                  style={styles.starPickerBtn}
+                  style={[
+                    styles.starPickerBtn,
+                    star <= rating && { backgroundColor: colors.primary, borderColor: colors.primary },
+                  ]}
                 >
-                  <Text style={[styles.starPickerText, star <= rating && styles.starFilled]}>
-                    ★
+                  <Text
+                    style={[
+                      styles.starPickerText,
+                      { color: star <= rating ? '#ffffff' : colors.text },
+                    ]}
+                  >
+                    {star}
                   </Text>
                 </TouchableOpacity>
               ))}
             </View>
 
             <TextInput
-              style={styles.commentInput}
+              style={[styles.commentInput, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
               placeholder="Chia sẻ cảm nhận của bạn về khóa học này..."
-              placeholderTextColor="#9ca3af"
+              placeholderTextColor={colors.textMuted}
               multiline
               value={comment}
               onChangeText={setComment}
@@ -991,31 +1109,31 @@ export function NativeReviewsAndComplaints({
             ) : null}
 
             <TouchableOpacity
-              style={[styles.primaryButton, busyReview && styles.buttonDisabled]}
+              style={[styles.primaryButton, { backgroundColor: colors.primary }, busyReview && styles.buttonDisabled]}
               onPress={handleSubmitReview}
               disabled={busyReview}
             >
               <Text style={styles.primaryButtonText}>Gửi đánh giá</Text>
             </TouchableOpacity>
           </View>
-        )}
+        ) : null}
 
         {/* Existing reviews list */}
         <View style={styles.reviewsList}>
           {reviews.length === 0 ? (
-            <Text style={styles.emptyNotice}>Chưa có đánh giá nào cho khóa học này.</Text>
+            <Text style={[styles.emptyNotice, { color: colors.textMuted }]}>Chưa có đánh giá nào cho khóa học này.</Text>
           ) : (
             reviews.map(r => (
-              <View key={r.id} style={styles.reviewItem}>
+              <View key={r.id} style={[styles.reviewItem, { borderBottomColor: colors.border }]}>
                 <View style={styles.reviewItemTop}>
-                  <Text style={styles.reviewAuthor}>{r.user_name || 'Học viên'}</Text>
-                  <Text style={styles.reviewStars}>
-                    {'★'.repeat(r.rating || 5)}{'☆'.repeat(5 - (r.rating || 5))}
+                  <Text style={[styles.reviewAuthor, { color: colors.text }]}>{r.user_name || 'Học viên'}</Text>
+                  <Text style={[styles.reviewStars, { color: colors.primary, fontWeight: '700' }]}>
+                    {r.rating || 5} / 5 sao
                   </Text>
                 </View>
-                {r.comment ? <Text style={styles.reviewBody}>{r.comment}</Text> : null}
-                <Text style={styles.reviewDate}>
-                  {new Date(r.created_at || r.updated_at).toLocaleDateString('vi-VN')}
+                {r.comment ? <Text style={[styles.reviewBody, { color: colors.textSecondary }]}>{r.comment}</Text> : null}
+                <Text style={[styles.reviewDate, { color: colors.textMuted }]}>
+                  {new Date(r.created_at).toLocaleDateString('vi-VN')}
                 </Text>
               </View>
             ))
@@ -1023,17 +1141,17 @@ export function NativeReviewsAndComplaints({
         </View>
       </View>
 
-      {/* COMPLAINT SECTION (ENROLLED STUDENTS ONLY) */}
-      {isEnrolled && (
-        <View style={styles.complaintSectionCard}>
-          <Text style={styles.sectionHeaderDanger}>Khiếu nại khóa học</Text>
-          <Text style={styles.complaintNotice}>
+      {/* COMPLAINT SECTION (ENROLLED STUDENTS ONLY, NOT INSTRUCTOR) */}
+      {isEnrolled && !isOwner && (
+        <View style={[styles.complaintSectionCard, { backgroundColor: colors.card, borderColor: 'rgba(220, 38, 38, 0.35)' }]}>
+          <Text style={[styles.sectionHeaderDanger, { color: isDark ? '#f87171' : '#b91c1c' }]}>Khiếu nại khóa học</Text>
+          <Text style={[styles.complaintNotice, { color: colors.textMuted }]}>
             Nếu phát hiện nội dung vi phạm chính sách hoặc chất lượng không đúng cam kết,
             bạn có thể gửi khiếu nại trực tiếp đến Quản trị viên hệ thống.
           </Text>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Lý do khiếu nại:</Text>
+            <Text style={[styles.label, { color: colors.text }]}>Lý do khiếu nại:</Text>
             <View style={styles.reasonsList}>
               {[
                 'Nội dung vi phạm / sai lệch',
@@ -1045,14 +1163,22 @@ export function NativeReviewsAndComplaints({
                   key={reason}
                   style={[
                     styles.reasonPill,
-                    complaintReason === reason && styles.reasonPillActive,
+                    { backgroundColor: colors.cardElevated, borderColor: colors.border },
+                    complaintReason === reason && {
+                      backgroundColor: isDark ? 'rgba(239, 68, 68, 0.18)' : '#fee2e2',
+                      borderColor: isDark ? 'rgba(239, 68, 68, 0.45)' : '#fca5a5',
+                    },
                   ]}
                   onPress={() => setComplaintReason(reason)}
                 >
                   <Text
                     style={[
                       styles.reasonPillText,
-                      complaintReason === reason && styles.reasonPillTextActive,
+                      { color: colors.textSecondary },
+                      complaintReason === reason && {
+                        color: isDark ? '#fca5a5' : '#b91c1c',
+                        fontWeight: '700',
+                      },
                     ]}
                   >
                     {reason}
@@ -1063,12 +1189,12 @@ export function NativeReviewsAndComplaints({
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Chi tiết khiếu nại:</Text>
+            <Text style={[styles.label, { color: colors.text }]}>Chi tiết khiếu nại:</Text>
             <TextInput
-              style={[styles.input, styles.textArea]}
+              style={[styles.input, styles.textArea, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
               multiline
               placeholder="Mô tả cụ thể sự việc cần phản ánh..."
-              placeholderTextColor="#9ca3af"
+              placeholderTextColor={colors.textMuted}
               value={complaintDescription}
               onChangeText={setComplaintDescription}
             />
@@ -1132,9 +1258,25 @@ export const styles = StyleSheet.create({
   lessonAlertText: {
     color: '#991b1b',
     fontSize: 12,
+    fontWeight: '600',
+  },
+  progressStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  progressStatusDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
   },
   statusHint: {
     fontSize: 12,
+    fontWeight: '600',
     color: '#64748b',
   },
   tabBar: {

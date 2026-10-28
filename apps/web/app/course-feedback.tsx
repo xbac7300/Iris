@@ -13,7 +13,6 @@ export function CourseFeedback({ courseId, isOwner = false }: { courseId: string
   const [liking, setLiking] = useState(false);
   const [message, setMessage] = useState('');
   const [rating, setRating] = useState<number>(5);
-  const [hoverRating, setHoverRating] = useState<number>(0);
   const [comment, setComment] = useState('');
 
   async function load() {
@@ -54,7 +53,7 @@ export function CourseFeedback({ courseId, isOwner = false }: { courseId: string
       });
       if (res.error) {
         if (prev) setData(prev);
-        setMessage((res.error as any)?.message ?? 'Không thể cập nhật lượt thích.');
+        setMessage((res.error as { message?: string })?.message ?? 'Không thể cập nhật lượt thích.');
       } else if (res.data) {
         setData(cur => cur ? {
           ...cur,
@@ -79,7 +78,7 @@ export function CourseFeedback({ courseId, isOwner = false }: { courseId: string
         params: { path: { id: courseId } },
         body: { rating, comment: comment.trim() },
       });
-      if (res.error) throw new Error((res.error as any)?.message ?? 'Không thể gửi đánh giá.');
+      if (res.error) throw new Error((res.error as { message?: string })?.message ?? 'Không thể gửi đánh giá.');
       setMessage(data?.user_review ? 'Đã cập nhật đánh giá thành công!' : 'Đã gửi đánh giá thành công!');
       await load();
     } catch (err) {
@@ -102,7 +101,7 @@ export function CourseFeedback({ courseId, isOwner = false }: { courseId: string
           params: { path: { id: courseId } },
         });
       }
-      if (res.error) throw new Error((res.error as any)?.message ?? 'Không thể xóa nhận xét.');
+      if (res.error) throw new Error((res.error as { message?: string })?.message ?? 'Không thể xóa nhận xét.');
       setComment('');
       setRating(5);
       setMessage('Đã xóa nhận xét của bạn.');

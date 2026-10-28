@@ -24,6 +24,7 @@ export class LearningService {
       const [c] = await tx.query('SELECT * FROM courses WHERE id=$1 AND owner_id=$2 FOR UPDATE', [course, p.id]);
       if (!c) throw new NotFoundException('Không tìm thấy khóa thuộc quyền quản lý.');
       if (c.is_locked) throw new ForbiddenException('Khóa học này đang bị Quản trị viên khóa. Không thể tạo bài kiểm tra.');
+      if (c.structure_locked_at) throw new ConflictException('Cấu trúc khóa học đã đóng băng sau khi có học viên đăng ký.');
 
       if (input.module_id) {
         const [m] = await tx.query('SELECT id FROM modules WHERE id=$1 AND course_id=$2', [input.module_id, course]);
@@ -135,7 +136,7 @@ export class LearningService {
     const isOwner = a.user_id === p.id;
     const [course] = await this.db.query('SELECT owner_id FROM courses WHERE id=$1', [a.course_id]);
     const isInstructor = (course && course.owner_id === p.id) || p.roles.includes('ADMIN');
-    if (!isOwner && !isInstructor) throw new ForbiddenException('Không có quyền xem bài làm này.');
+    if (!isOwner && !isInstructor) throw new NotFoundException('Không tìm thấy lượt làm bài.');
     await this.media.requireRead(this.db.manager, a.course_id, p);
 
     const answers = await this.db.query(`

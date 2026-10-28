@@ -7,12 +7,45 @@ type AdminUser = components['schemas']['AdminUserDto'];
 type Usage = components['schemas']['UsageDto'];
 type Announcement = components['schemas']['AnnouncementDto'];
 
+interface ComplaintItem {
+  id: string;
+  course_id: string;
+  user_id: string;
+  reason: string;
+  description: string;
+  status: string;
+  admin_notes?: string | null;
+  resolved_at?: string | null;
+  created_at: string;
+  course_title: string;
+  course_status: string;
+  student_name: string;
+  student_email: string;
+  instructor_name: string;
+  instructor_email: string;
+}
+
+interface LockedCourseItem {
+  id: string;
+  title: string;
+  description?: string;
+  status: string;
+  is_locked: boolean;
+  locked_at?: string | null;
+  locked_until?: string | null;
+  locked_reason?: string | null;
+  owner_id: string;
+  owner_name: string;
+  owner_email: string;
+  locked_by_name?: string | null;
+}
+
 export function AdminPanel() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [usage, setUsage] = useState<Usage | null>(null);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [page, setPage] = useState(0);
-  const [message, setMessage] = useState('');
+  const [, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
 
   // Announcement state
@@ -30,13 +63,21 @@ export function AdminPanel() {
   const [lockReason, setLockReason] = useState('');
 
   // Course complaints state
-  const [complaints, setComplaints] = useState<any[]>([]);
-  const [resolvingComplaint, setResolvingComplaint] = useState<any | null>(null);
+  const [complaints, setComplaints] = useState<ComplaintItem[]>([]);
+  const [resolvingComplaint, setResolvingComplaint] = useState<ComplaintItem | null>(null);
   const [resolveAction, setResolveAction] = useState<'CLOSE_COURSE' | 'DISMISS'>('CLOSE_COURSE');
   const [resolveNotes, setResolveNotes] = useState('');
 
   // Locked courses state
-  const [lockedCourses, setLockedCourses] = useState<any[]>([]);
+  const [lockedCourses, setLockedCourses] = useState<LockedCourseItem[]>([]);
+  const [allAdminCourses, setAllAdminCourses] = useState<LockedCourseItem[]>([]);
+  const [courseFilterTab, setCourseFilterTab] = useState<'locked' | 'all'>('all');
+  const [lockingCourse, setLockingCourse] = useState<LockedCourseItem | null>(null);
+  const [courseLockMode, setCourseLockMode] = useState<'indefinite' | 'days' | 'range'>('indefinite');
+  const [courseLockDays, setCourseLockDays] = useState(7);
+  const [courseLockFrom, setCourseLockFrom] = useState('');
+  const [courseLockUntil, setCourseLockUntil] = useState('');
+  const [courseLockReason, setCourseLockReason] = useState('');
 
   // Collapse/Expand state for long sections
   const [showComplaints, setShowComplaints] = useState(true);
@@ -65,27 +106,61 @@ export function AdminPanel() {
   });
 
   async function load(offset = page) {
-    const [u, s, a, comp, locked] = await Promise.all([
+    const [u, s, a, comp, locked, allC] = await Promise.all([
       session.api.GET('/api/v1/admin/users', { params: { query: { limit: 20, offset: offset * 20 } } }),
       session.api.GET('/api/v1/admin/users/usage'),
       session.api.GET('/api/v1/admin/announcements'),
-      (session.api.GET as any)('/api/v1/admin/complaints', {}),
-      (session.api.GET as any)('/api/v1/admin/locked-courses', {}),
+      session.api.GET('/api/v1/admin/complaints'),
+      session.api.GET('/api/v1/admin/locked-courses'),
+      session.api.GET('/api/v1/admin/all-courses' as '/api/v1/admin/locked-courses'),
     ]);
     if (u.data) setUsers(u.data);
     if (s.data) setUsage(s.data);
     if (a.data) setAnnouncements(a.data);
-    if (comp.data) setComplaints(comp.data);
-    if (locked.data) setLockedCourses(locked.data);
+    if (comp.data) setComplaints(comp.data as unknown as ComplaintItem[]);
+    if (locked.data) setLockedCourses(locked.data as unknown as LockedCourseItem[]);
+    if (allC.data) setAllAdminCourses(allC.data as unknown as LockedCourseItem[]);
+  }
+
+  async function submitLockCourse(e: React.FormEvent) {
+    e.preventDefault();
+    if (!lockingCourse) return;
+    let computedFrom: string | undefined = undefined;
+    let computedUntil: string | undefined = undefined;
+    if (courseLockMode === 'days') {
+      computedUntil = new Date(Date.now() + courseLockDays * 24 * 60 * 60 * 1000).toISOString();
+    } else if (courseLockMode === 'range') {
+      if (!courseLockUntil) {
+        setMessage('Vui lòng chọn ngày kết thúc khóa khóa học.');
+        return;
+      }
+      if (courseLockFrom) computedFrom = new Date(courseLockFrom).toISOString();
+      computedUntil = new Date(courseLockUntil).toISOString();
+    }
+    await act(async () => {
+      const res = await session.api.POST('/api/v1/admin/courses/{id}/lock', {
+        params: { path: { id: lockingCourse.id } },
+        body: {
+          reason: courseLockReason.trim() || 'Tạm khóa bởi Quản trị viên để kiểm duyệt',
+          ...(courseLockMode === 'days' ? { days: courseLockDays } : {}),
+          ...(computedFrom ? { locked_from: computedFrom } : {}),
+          ...(computedUntil ? { locked_until: computedUntil } : {}),
+        } as never,
+      });
+      if (res.error) throw new Error(res.error.message ?? 'Không thể khóa khóa học.');
+      setLockingCourse(null);
+      setCourseLockReason('');
+      setMessage(`Đã khóa khóa học "${lockingCourse.title}".`);
+    });
   }
 
   async function handleUnlockCourse(courseId: string, title: string) {
     if (!window.confirm(`Bạn có chắc chắn muốn gỡ khóa cho khóa học "${title}"? Khóa học sẽ được chuyển lại trạng thái Đã xuất bản và giảng viên có thể tương tác bình thường.`)) return;
     await act(async () => {
-      const res = await session.api.POST('/api/v1/admin/courses/{id}/unlock' as any, {
+      const res = await session.api.POST('/api/v1/admin/courses/{id}/unlock', {
         params: { path: { id: courseId } },
       });
-      if (res.error) throw new Error((res.error as any).message ?? 'Không thể mở khóa khóa học.');
+      if (res.error) throw new Error(res.error.message ?? 'Không thể mở khóa khóa học.');
       setMessage(`Đã gỡ khóa thành công cho khóa học "${title}".`);
     });
   }
@@ -94,14 +169,14 @@ export function AdminPanel() {
     e.preventDefault();
     if (!resolvingComplaint) return;
     await act(async () => {
-      const res = await session.api.POST('/api/v1/admin/complaints/{id}/resolve' as any, {
+      const res = await session.api.POST('/api/v1/admin/complaints/{id}/resolve', {
         params: { path: { id: resolvingComplaint.id } },
         body: {
           action: resolveAction,
           admin_notes: resolveNotes.trim(),
         },
       });
-      if (res.error) throw new Error((res.error as any).message ?? 'Không thể xử lý khiếu nại.');
+      if (res.error) throw new Error(res.error.message ?? 'Không thể xử lý khiếu nại.');
       setMessage(resolveAction === 'CLOSE_COURSE' ? 'Đã đóng khóa học theo khiếu nại của học viên.' : 'Đã bác bỏ khiếu nại.');
       setResolvingComplaint(null);
       setResolveNotes('');
@@ -166,6 +241,7 @@ export function AdminPanel() {
     e.preventDefault();
     if (!lockingUser) return;
 
+    let computedFrom: string | undefined = undefined;
     let computedUntil: string | undefined = undefined;
     if (lockMode === 'days') {
       const d = new Date(Date.now() + lockDays * 24 * 60 * 60 * 1000);
@@ -175,6 +251,7 @@ export function AdminPanel() {
         setMessage('Vui lòng chọn ngày kết thúc khóa.');
         return;
       }
+      if (lockFrom) computedFrom = new Date(lockFrom).toISOString();
       computedUntil = new Date(lockUntil).toISOString();
     }
 
@@ -183,6 +260,8 @@ export function AdminPanel() {
         params: { path: { id: lockingUser.id } },
         body: {
           disabled: true,
+          ...(lockMode === 'days' ? { days: lockDays } : {}),
+          ...(computedFrom ? { disabled_from: computedFrom } : {}),
           disabled_until: computedUntil,
           reason: lockReason.trim() || undefined,
         },
@@ -365,26 +444,26 @@ export function AdminPanel() {
         )}
       </div>
 
-      {/* Danh mục các khóa học đang bị khóa */}
+      {/* Danh mục quản lý & khóa khóa học */}
       <div id="admin-sec-locked-courses" className="panel" style={{ marginBottom: '24px', borderLeft: '4px solid #dc2626' }}>
         <div
           onClick={() => setShowLockedCourses(v => !v)}
           style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', userSelect: 'none', flexWrap: 'wrap', gap: '8px' }}
         >
           <div>
-            <p className="eyebrow" style={{ margin: 0, color: '#dc2626' }}>QUẢN LÝ KHÓA HỌC BỊ KHÓA</p>
-            <h3 style={{ margin: '2px 0 0' }}>Khóa học đang bị khóa ({lockedCourses.length})</h3>
+            <p className="eyebrow" style={{ margin: 0, color: '#dc2626' }}>QUẢN LÝ & KHÓA KHÓA HỌC</p>
+            <h3 style={{ margin: '2px 0 0' }}>Quản lý khóa học ({lockedCourses.length} đang khóa / {allAdminCourses.length} tổng số)</h3>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <span className="badge" style={{ background: 'rgba(220, 38, 38, 0.1)', color: '#dc2626', border: '1px solid #ef4444' }}>
-              {lockedCourses.length} khóa học
+              {lockedCourses.length} đang bị khóa
             </span>
             <button
               type="button"
               className="secondary"
               style={{ padding: '4px 10px', fontSize: '13px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
               onClick={(e) => { e.stopPropagation(); setShowLockedCourses(v => !v); }}
-              aria-label={showLockedCourses ? 'Thu gọn danh sách khóa học bị khóa' : 'Mở rộng danh sách khóa học bị khóa'}
+              aria-label={showLockedCourses ? 'Thu gọn danh sách khóa học' : 'Mở rộng danh sách khóa học'}
             >
               <span style={{ fontSize: '12px' }}>{showLockedCourses ? 'Thu gọn' : 'Mở rộng'}</span>
               <span style={{ fontSize: '11px', display: 'inline-block', transform: showLockedCourses ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.2s ease' }}>▼</span>
@@ -394,17 +473,25 @@ export function AdminPanel() {
 
         {showLockedCourses && (
           <div style={{ marginTop: '14px' }}>
-            <p className="small" style={{ marginBottom: '16px' }}>
-              Các khóa học bị Quản trị viên đóng do khiếu nại hoặc kiểm duyệt. Giảng viên sở hữu không thể chỉnh sửa, thêm bài học hoặc tương tác với khóa học cho đến khi bạn gỡ khóa.
+            <p className="small" style={{ marginBottom: '12px' }}>
+              Quản trị viên có thể khóa bất kỳ khóa học nào (vô thời hạn, theo số ngày hoặc từ ngày đến ngày) hoặc gỡ khóa các khóa học đang bị khóa.
             </p>
+            <div className="filters" style={{ marginBottom: '14px' }}>
+              <button type="button" className={courseFilterTab === 'all' ? 'selected' : ''} onClick={() => setCourseFilterTab('all')}>
+                Tất cả khóa học ({allAdminCourses.length})
+              </button>
+              <button type="button" className={courseFilterTab === 'locked' ? 'selected' : ''} onClick={() => setCourseFilterTab('locked')}>
+                Đang bị khóa ({lockedCourses.length})
+              </button>
+            </div>
 
-            {lockedCourses.length === 0 ? (
+            {(courseFilterTab === 'locked' ? lockedCourses : allAdminCourses).length === 0 ? (
               <div style={{ padding: '24px', textAlign: 'center', background: 'var(--bg-elevated)', borderRadius: '8px', color: 'var(--text-muted)' }}>
-                Hiện không có khóa học nào đang bị khóa.
+                {courseFilterTab === 'locked' ? 'Hiện không có khóa học nào đang bị khóa.' : 'Chưa có khóa học nào trên hệ thống.'}
               </div>
             ) : (
               <div style={{ display: 'grid', gap: '12px' }}>
-            {lockedCourses.map(c => (
+            {(courseFilterTab === 'locked' ? lockedCourses : allAdminCourses).map(c => (
               <div
                 key={c.id}
                 className="locked-course-card"
@@ -421,17 +508,23 @@ export function AdminPanel() {
                 }}
               >
                 <div style={{ flex: 1, minWidth: '260px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
                     <strong style={{ fontSize: '15px' }}>{c.title}</strong>
-                    <span className="badge" style={{ background: 'rgba(220, 38, 38, 0.12)', color: '#dc2626', fontSize: '11px', fontWeight: 700 }}>
-                      Đang bị khóa
-                    </span>
+                    {c.is_locked ? (
+                      <span className="badge" style={{ background: 'rgba(220, 38, 38, 0.12)', color: '#dc2626', fontSize: '11px', fontWeight: 700 }}>
+                        Đang bị khóa {c.locked_until ? `(đến ${new Date(c.locked_until).toLocaleString('vi-VN')})` : '(Vô thời hạn)'}
+                      </span>
+                    ) : (
+                      <span className={`badge ${c.status === 'PUBLISHED' ? 'ready' : ''}`} style={{ fontSize: '11px' }}>
+                        {c.status === 'PUBLISHED' ? 'Đã xuất bản' : c.status === 'DRAFT' ? 'Bản nháp' : 'Lưu trữ'}
+                      </span>
+                    )}
                   </div>
                   <div className="small" style={{ color: 'var(--text-muted)' }}>
                     Giảng viên: <strong>{c.owner_name}</strong> ({c.owner_email})
                     {c.locked_at && ` · Khóa lúc: ${new Date(c.locked_at).toLocaleString('vi-VN')}`}
                   </div>
-                  {c.locked_reason && (
+                  {c.is_locked && c.locked_reason && (
                     <div style={{ marginTop: '8px', padding: '8px 12px', background: 'var(--bg-surface)', borderRadius: '6px', borderLeft: '3px solid #dc2626', fontSize: '13px' }}>
                       <span style={{ fontWeight: 600, color: '#dc2626' }}>Lý do khóa: </span>
                       <span>{c.locked_reason}</span>
@@ -439,22 +532,40 @@ export function AdminPanel() {
                   )}
                 </div>
 
-                <button
-                  type="button"
-                  className="primary"
-                  style={{
-                    padding: '8px 18px',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    borderRadius: '8px',
-                    background: 'var(--green)',
-                    borderColor: 'var(--green)',
-                  }}
-                  disabled={busy}
-                  onClick={() => void handleUnlockCourse(c.id, c.title)}
-                >
-                  Mở khóa / Gỡ khóa
-                </button>
+                {c.is_locked ? (
+                  <button
+                    type="button"
+                    className="primary"
+                    style={{
+                      padding: '8px 18px',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      borderRadius: '8px',
+                      background: 'var(--green)',
+                      borderColor: 'var(--green)',
+                    }}
+                    disabled={busy}
+                    onClick={() => void handleUnlockCourse(c.id, c.title)}
+                  >
+                    Mở khóa / Gỡ khóa
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="secondary danger"
+                    disabled={busy}
+                    onClick={() => {
+                      setLockingCourse(c);
+                      setCourseLockMode('indefinite');
+                      setCourseLockDays(7);
+                      setCourseLockFrom('');
+                      setCourseLockUntil('');
+                      setCourseLockReason('');
+                    }}
+                  >
+                    Khóa khóa học
+                  </button>
+                )}
               </div>
             ))}
           </div>
@@ -487,7 +598,7 @@ export function AdminPanel() {
               Đối tượng nhận
               <select
                 value={annTarget}
-                onChange={e => setAnnTarget(e.target.value as any)}
+                onChange={e => setAnnTarget(e.target.value as 'ALL' | 'INSTRUCTOR' | 'STUDENT' | 'USER')}
                 style={{ height: '42px', marginTop: '6px', borderRadius: '8px', border: '1px solid var(--border-color)', padding: '0 10px', background: 'var(--input-bg)', color: 'var(--text-primary)', width: '100%' }}
               >
                 <option value="ALL">Tất cả người dùng</option>
@@ -992,6 +1103,177 @@ export function AdminPanel() {
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
                 <button type="button" className="secondary" onClick={() => setLockingUser(null)}>
+                  Hủy
+                </button>
+                <button type="submit" className="danger" disabled={busy}>
+                  Xác nhận khóa
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Course Lock Modal */}
+      {lockingCourse && (
+        <div
+          className="modal-backdrop"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.55)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: '16px',
+          }}
+        >
+          <div
+            className="modal-content panel"
+            style={{
+              maxWidth: '480px',
+              width: '100%',
+              boxShadow: '0 20px 40px rgba(0, 0, 0, 0.3)',
+              background: 'var(--bg-card)',
+            }}
+          >
+            <h3 style={{ margin: '0 0 8px 0' }}>Khóa khóa học: {lockingCourse.title}</h3>
+            <p className="small" style={{ marginBottom: '16px' }}>
+              Giảng viên: {lockingCourse.owner_name} ({lockingCourse.owner_email}) · Mọi hoạt động học tập và chỉnh sửa sẽ bị tạm dừng.
+            </p>
+
+            <form onSubmit={submitLockCourse} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label
+                  className="modal-radio-label"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '12px 14px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-color)',
+                    background: courseLockMode === 'indefinite' ? 'rgba(33, 99, 79, 0.08)' : 'var(--bg-elevated)',
+                    cursor: 'pointer',
+                    fontWeight: 500,
+                    marginBottom: '8px',
+                  }}
+                >
+                  <span style={{ fontSize: '14px', color: 'var(--text-primary)' }}>Khóa vĩnh viễn (Vô thời hạn)</span>
+                  <input
+                    type="radio"
+                    name="course_lock_mode"
+                    value="indefinite"
+                    checked={courseLockMode === 'indefinite'}
+                    onChange={() => setCourseLockMode('indefinite')}
+                    style={{ width: '18px', height: '18px', margin: 0, cursor: 'pointer' }}
+                  />
+                </label>
+
+                <label
+                  className="modal-radio-label"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '12px 14px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-color)',
+                    background: courseLockMode === 'days' ? 'rgba(33, 99, 79, 0.08)' : 'var(--bg-elevated)',
+                    cursor: 'pointer',
+                    fontWeight: 500,
+                    marginBottom: '8px',
+                  }}
+                >
+                  <span style={{ fontSize: '14px', color: 'var(--text-primary)' }}>Khóa theo số ngày</span>
+                  <input
+                    type="radio"
+                    name="course_lock_mode"
+                    value="days"
+                    checked={courseLockMode === 'days'}
+                    onChange={() => setCourseLockMode('days')}
+                    style={{ width: '18px', height: '18px', margin: 0, cursor: 'pointer' }}
+                  />
+                </label>
+                {courseLockMode === 'days' && (
+                  <div style={{ marginLeft: '14px', marginBottom: '10px' }}>
+                    <input
+                      type="number"
+                      min={1}
+                      max={365}
+                      value={courseLockDays}
+                      onChange={e => setCourseLockDays(Number(e.target.value))}
+                      style={{ width: '120px', padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--border-color)' }}
+                    />
+                    <span style={{ marginLeft: '8px', fontSize: '13px' }}>ngày</span>
+                  </div>
+                )}
+
+                <label
+                  className="modal-radio-label"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '12px 14px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-color)',
+                    background: courseLockMode === 'range' ? 'rgba(33, 99, 79, 0.08)' : 'var(--bg-elevated)',
+                    cursor: 'pointer',
+                    fontWeight: 500,
+                    marginBottom: '8px',
+                  }}
+                >
+                  <span style={{ fontSize: '14px', color: 'var(--text-primary)' }}>Khóa từ ngày đến ngày</span>
+                  <input
+                    type="radio"
+                    name="course_lock_mode"
+                    value="range"
+                    checked={courseLockMode === 'range'}
+                    onChange={() => setCourseLockMode('range')}
+                    style={{ width: '18px', height: '18px', margin: 0, cursor: 'pointer' }}
+                  />
+                </label>
+                {courseLockMode === 'range' && (
+                  <div style={{ marginLeft: '26px', display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '10px' }}>
+                    <label style={{ fontSize: '12px', margin: 0 }}>
+                      Từ ngày:
+                      <input
+                        type="datetime-local"
+                        value={courseLockFrom}
+                        onChange={e => setCourseLockFrom(e.target.value)}
+                        style={{ marginTop: '4px', padding: '6px', borderRadius: '6px', border: '1px solid var(--border-color)', width: '100%' }}
+                      />
+                    </label>
+                    <label style={{ fontSize: '12px', margin: 0 }}>
+                      Đến ngày mở khóa:
+                      <input
+                        type="datetime-local"
+                        required={courseLockMode === 'range'}
+                        value={courseLockUntil}
+                        onChange={e => setCourseLockUntil(e.target.value)}
+                        style={{ marginTop: '4px', padding: '6px', borderRadius: '6px', border: '1px solid var(--border-color)', width: '100%' }}
+                      />
+                    </label>
+                  </div>
+                )}
+              </div>
+
+              <label style={{ margin: 0 }}>
+                Lý do khóa khóa học (hiển thị cho giảng viên và học viên):
+                <textarea
+                  rows={2}
+                  maxLength={500}
+                  placeholder="Ví dụ: Vi phạm bản quyền, nội dung không phù hợp, đang kiểm duyệt..."
+                  value={courseLockReason}
+                  onChange={e => setCourseLockReason(e.target.value)}
+                  style={{ marginTop: '6px' }}
+                />
+              </label>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
+                <button type="button" className="secondary" onClick={() => setLockingCourse(null)}>
                   Hủy
                 </button>
                 <button type="submit" className="danger" disabled={busy}>

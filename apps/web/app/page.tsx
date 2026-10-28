@@ -6,12 +6,8 @@ import { session } from './session';
 import { CourseEditor } from './course-editor';
 import { CourseCreator } from './course-creator';
 import { AdminPanel } from './admin-panel';
-type Course = components['schemas']['CourseDto'] & {
-  is_locked?: boolean;
-  locked_at?: string | null;
-  locked_reason?: string | null;
-};
-const roles: Record<string, string> = { STUDENT: 'Học viên', INSTRUCTOR: 'Giảng viên', ADMIN: 'Quản trị viên' };
+type Course = components['schemas']['CourseDto'];
+type Announcement = components['schemas']['AnnouncementDto'];
 export default function Home() {
   const [user, setUser] = useState(session.user);
   const [courses, setCourses] = useState<Course[]>([]);
@@ -20,8 +16,6 @@ export default function Home() {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [busy, setBusy] = useState(true);
   const [message, setMessage] = useState('');
-  const [title, setTitle] = useState('');
-  const [selectedTag, setSelectedTag] = useState<string>('CNTT & Phần mềm');
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
   const [tagFilter, setTagFilter] = useState('all');
@@ -30,8 +24,7 @@ export default function Home() {
   const [adminView,setAdminView]=useState(false);
   const [darkMode, setDarkMode] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [thumbnailUrl, setThumbnailUrl] = useState('');
-  const [announcementsQueue, setAnnouncementsQueue] = useState<any[]>([]);
+  const [announcementsQueue, setAnnouncementsQueue] = useState<Announcement[]>([]);
   const [announcementCountdown, setAnnouncementCountdown] = useState<number>(10);
   const [courseActionTarget, setCourseActionTarget] = useState<{
     course: Course;
@@ -64,7 +57,7 @@ export default function Home() {
     setBusy(true);
     setMessage('');
     try {
-      const { data, error } = await session.api.POST('/api/v1/auth/switch-role' as any, {
+      const { data, error } = await session.api.POST('/api/v1/auth/switch-role', {
         body: { role: newRole }
       });
       if (error) throw new Error(error.message ?? 'Chưa thể đăng ký vai trò mới.');
@@ -82,26 +75,22 @@ export default function Home() {
       setBusy(false);
     }
   }
-  const [loadingNotifications, setLoadingNotifications] = useState(false);
 
   async function loadNotifications() {
     if (!session.user) return;
-    setLoadingNotifications(true);
     try {
-      const { data } = await session.api.GET('/api/v1/announcements/notifications' as any, {});
+      const { data } = await session.api.GET('/api/v1/announcements/notifications', {});
       if (data && Array.isArray(data)) {
         setNotifications(data as NotificationItem[]);
       }
     } catch {
       // Bỏ qua lỗi kết nối
-    } finally {
-      setLoadingNotifications(false);
     }
   }
 
   async function markAllNotificationsRead() {
     try {
-      await session.api.POST('/api/v1/announcements/mark-all-read' as any, {});
+      await session.api.POST('/api/v1/announcements/mark-all-read', {});
       setNotifications(prev => prev.map(n => ({ ...n, read: true })));
     } catch {
       // Bỏ qua lỗi
@@ -130,6 +119,8 @@ export default function Home() {
     }
     const savedSidebar = localStorage.getItem('sidebar_open');
     if (savedSidebar === 'false') {
+      setSidebarOpen(false);
+    } else if (!savedSidebar && typeof window !== 'undefined' && window.innerWidth <= 900) {
       setSidebarOpen(false);
     }
   }, []);
@@ -160,7 +151,7 @@ export default function Home() {
 
   async function checkAnnouncements() {
     try {
-      const { data } = await session.api.GET('/api/v1/announcements/unread' as any, {});
+      const { data } = await session.api.GET('/api/v1/announcements/unread', {});
       if (data && Array.isArray(data) && data.length > 0) {
         setAnnouncementsQueue(data);
       }
@@ -174,7 +165,7 @@ export default function Home() {
     if (!current) return;
     setAnnouncementsQueue(prev => prev.slice(1));
     try {
-      await session.api.POST('/api/v1/announcements/{id}/read' as any, {
+      await session.api.POST('/api/v1/announcements/{id}/read', {
         params: { path: { id: current.id } },
       });
     } catch {
@@ -216,7 +207,7 @@ export default function Home() {
       if (courseActionTarget.action === 'ARCHIVE') {
         const { error } = await session.api.POST('/api/v1/courses/{id}/archive', {
           params: { path: { id: courseActionTarget.course.id } },
-          body: bodyPayload as any,
+          body: bodyPayload,
         });
         if (error) throw new Error(error.message);
         setMessage(
@@ -229,12 +220,12 @@ export default function Home() {
       } else if (courseActionTarget.action === 'DELETE') {
         let res = await session.api.DELETE('/api/v1/courses/{id}', {
           params: { path: { id: courseActionTarget.course.id } },
-          body: bodyPayload as any,
+          body: bodyPayload,
         });
         if (res.error) {
           res = await session.api.POST('/api/v1/courses/{id}/delete', {
             params: { path: { id: courseActionTarget.course.id } },
-            body: bodyPayload as any,
+            body: bodyPayload,
           });
         }
         if (res.error) throw new Error(res.error.message ?? 'Chưa thể xóa khóa học.');
@@ -257,6 +248,23 @@ export default function Home() {
     }
     setCourses(result);
   }
+  useEffect(() => {
+    const unsubscribe = session.onClear((reason) => {
+      setUser(null);
+      setSelected(null);
+      setIsCreatingCourse(false);
+      setAdminView(false);
+      setCourses([]);
+      setAnnouncementsQueue([]);
+      setNotificationsOpen(false);
+      setProfileMenuOpen(false);
+      if (reason) {
+        setMessage(reason);
+      }
+    });
+    return unsubscribe;
+  }, []);
+
   useEffect(() => {
     let active = true;
     void session.restore().then(async () => {
@@ -300,26 +308,6 @@ export default function Home() {
   async function logout() {
     setBusy(true); setMessage(''); setSelected(null); setUser(null); setCourses([]); setSearch(''); setFilter('all'); setAnnouncementsQueue([]); setIsCreatingCourse(false); setCourseActionTarget(null); setAdminView(false);
     try { await session.logout(); } catch { setMessage('Đã xóa phiên trên máy. Chưa xác nhận thu hồi trên server do lỗi kết nối.'); } finally { setBusy(false); }
-  }
-  async function createCourse(event: FormEvent) {
-    event.preventDefault(); setBusy(true); setMessage('');
-    try {
-      const { error } = await session.api.POST('/api/v1/courses', {
-        body: {
-          title: title.trim(),
-          tag: selectedTag,
-          thumbnail_url: thumbnailUrl.trim() || undefined,
-        } as any
-      });
-      if (error) throw new Error(error.message);
-      setTitle('');
-      setThumbnailUrl('');
-      await loadCourses();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Không thể tạo khóa học.');
-    } finally {
-      setBusy(false);
-    }
   }
   async function toggleLike(courseId: string, event: React.MouseEvent) {
     event.stopPropagation();
@@ -365,7 +353,7 @@ export default function Home() {
     setIsCreatingCourse(false);
     setFilter('all');
     try {
-      const { data } = await session.api.POST('/api/v1/auth/switch-role' as any, {
+      const { data } = await session.api.POST('/api/v1/auth/switch-role', {
         body: { role: nextMode }
       });
       if (data) {
@@ -384,21 +372,20 @@ export default function Home() {
   const roleCourses = instructor && user
     ? courses.filter(c => c.owner_id === user.id)
     : courses.filter(c => {
-        const cAny = c as any;
         // Giảng viên xem khóa học do chính mình tạo
         if (c.owner_id === user?.id) return true;
         // Khóa học công khai: hiển thị cho tất cả
-        if (!cAny.access_mode || cAny.access_mode === 'PUBLIC') return true;
+        if (!c.access_mode || c.access_mode === 'PUBLIC') return true;
         // Học viên đã tham gia / đăng ký khóa học: luôn hiển thị
         if (c.user_enrolled) return true;
         // Khóa học chỉ định: chỉ hiển thị nếu học viên được mời (email nằm trong allowed_emails)
-        if (cAny.access_mode === 'RESTRICTED') {
+        if (c.access_mode === 'RESTRICTED') {
           const userEmail = user?.email?.toLowerCase().trim();
           if (!userEmail) return false;
-          return Array.isArray(cAny.allowed_emails) && cAny.allowed_emails.some((e: string) => e.toLowerCase().trim() === userEmail);
+          return Array.isArray(c.allowed_emails) && c.allowed_emails.some((e: string) => e.toLowerCase().trim() === userEmail);
         }
         // Khóa học share link: ẩn khỏi Khám phá / Tất cả khóa học (chỉ hiện khi đã tham gia)
-        if (cAny.access_mode === 'LINK') {
+        if (c.access_mode === 'LINK') {
           return false;
         }
         return true;
@@ -409,14 +396,14 @@ export default function Home() {
       const matchesSearch = !q ||
         c.title.toLocaleLowerCase('vi').includes(q) ||
         (c.description && c.description.toLocaleLowerCase('vi').includes(q)) ||
-        (Boolean((c as any).tag) && (c as any).tag.toLocaleLowerCase('vi').includes(q));
+        (c.tag ? c.tag.toLocaleLowerCase('vi').includes(q) : false);
 
       const matchesStatus =
         filter === 'all' ? true
         : filter === 'enrolled' ? Boolean(c.user_enrolled)
         : filter === 'liked' ? Boolean(c.user_liked)
         : c.status === filter;
-      const matchesTag = tagFilter === 'all' || (c as any).tag === tagFilter;
+      const matchesTag = tagFilter === 'all' || c.tag === tagFilter;
       const matchesStar = starFilter === 'all' || (c.avg_rating || 0) >= Number(starFilter);
 
       return matchesSearch && matchesStatus && matchesTag && matchesStar;
@@ -897,25 +884,32 @@ export default function Home() {
     </header>
     {user ? (
       <div className={'app-layout' + (sidebarOpen ? '' : ' sidebar-collapsed')}>
+        {sidebarOpen && (
+          <div
+            className="sidebar-backdrop"
+            onClick={toggleSidebar}
+            aria-hidden="true"
+          />
+        )}
         <aside className={'sidebar' + (sidebarOpen ? '' : ' collapsed')}>
           <p className="eyebrow" style={{ marginTop: '10px' }}>KHÔNG GIAN CỦA BẠN</p>
           {isStudent ? (
             <>
               <button
                 className={filter === 'all' && !selected && !isCreatingCourse ? 'nav-active' : ''}
-                onClick={() => { setSelected(null); setIsCreatingCourse(false); setFilter('all'); }}
+                onClick={() => { setSelected(null); setIsCreatingCourse(false); setFilter('all'); if (typeof window !== 'undefined' && window.innerWidth <= 900) setSidebarOpen(false); }}
               >
                 <span>Tất cả khóa học</span>
               </button>
               <button
                 className={filter === 'enrolled' && !selected && !isCreatingCourse ? 'nav-active' : ''}
-                onClick={() => { setSelected(null); setIsCreatingCourse(false); setFilter('enrolled'); }}
+                onClick={() => { setSelected(null); setIsCreatingCourse(false); setFilter('enrolled'); if (typeof window !== 'undefined' && window.innerWidth <= 900) setSidebarOpen(false); }}
               >
                 <span>Đang học</span>
               </button>
               <button
                 className={filter === 'liked' && !selected && !isCreatingCourse ? 'nav-active' : ''}
-                onClick={() => { setSelected(null); setIsCreatingCourse(false); setFilter('liked'); }}
+                onClick={() => { setSelected(null); setIsCreatingCourse(false); setFilter('liked'); if (typeof window !== 'undefined' && window.innerWidth <= 900) setSidebarOpen(false); }}
               >
                 <span>Yêu thích</span>
               </button>
@@ -924,13 +918,13 @@ export default function Home() {
             <>
               <button
                 className={filter === 'all' && !selected && !isCreatingCourse ? 'nav-active' : ''}
-                onClick={() => { setSelected(null); setIsCreatingCourse(false); setFilter('all'); }}
+                onClick={() => { setSelected(null); setIsCreatingCourse(false); setFilter('all'); if (typeof window !== 'undefined' && window.innerWidth <= 900) setSidebarOpen(false); }}
               >
                 <span>Khóa học</span>
               </button>
               <button
                 className={filter === 'DRAFT' && !selected && !isCreatingCourse ? 'nav-active' : ''}
-                onClick={() => { setSelected(null); setIsCreatingCourse(false); setFilter('DRAFT'); }}
+                onClick={() => { setSelected(null); setIsCreatingCourse(false); setFilter('DRAFT'); if (typeof window !== 'undefined' && window.innerWidth <= 900) setSidebarOpen(false); }}
               >
                 <span>Bản nháp của tôi</span>
               </button>
@@ -939,7 +933,7 @@ export default function Home() {
             <>
               <button
                 className={filter === 'all' && !selected && !isCreatingCourse ? 'nav-active' : ''}
-                onClick={() => { setSelected(null); setIsCreatingCourse(false); setFilter('all'); }}
+                onClick={() => { setSelected(null); setIsCreatingCourse(false); setFilter('all'); if (typeof window !== 'undefined' && window.innerWidth <= 900) setSidebarOpen(false); }}
               >
                 <span>Tất cả khóa học</span>
               </button>
@@ -1090,11 +1084,11 @@ export default function Home() {
         )}
         <section className="catalog">
           <div className="catalog-toolbar" style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '20px' }}>
-            <div className="row catalog-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+            <div className="row catalog-title">
               <h2 style={{ margin: 0 }}>
                 {instructor ? 'Khóa học của tôi' : 'Khám phá khóa học'} <span className="count">{filtered.length} / {roleCourses.length}</span>
               </h2>
-              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', flex: 1, justifyContent: 'flex-end', maxWidth: '750px' }}>
+              <div className="catalog-controls">
                 <label className="search" style={{ flex: '2 1 180px', minWidth: '150px', margin: 0 }}>
                   <span className="sr-only">Tìm khóa học</span>
                   <input placeholder="Tìm tên, chủ đề…" value={search} onChange={event => setSearch(event.target.value)} style={{ width: '100%' }} />
@@ -1195,20 +1189,20 @@ export default function Home() {
                           </span>
                         )}
                         <span className="badge tag-badge">
-                          {(course as any).tag || 'CNTT & Phần mềm'}
+                          {course.tag || 'CNTT & Phần mềm'}
                         </span>
-                        {((course as any).access_mode === 'LINK' || (course as any).access_mode === 'RESTRICTED') && (
+                        {(course.access_mode === 'LINK' || course.access_mode === 'RESTRICTED') && (
                           <span
                             className="badge"
                             style={{
-                              background: (course as any).access_mode === 'LINK' ? 'rgba(59, 130, 246, 0.12)' : 'rgba(168, 85, 247, 0.12)',
-                              color: (course as any).access_mode === 'LINK' ? '#2563eb' : '#9333ea',
-                              border: `1px solid ${(course as any).access_mode === 'LINK' ? '#93c5fd' : '#d8b4fe'}`,
+                              background: course.access_mode === 'LINK' ? 'rgba(59, 130, 246, 0.12)' : 'rgba(168, 85, 247, 0.12)',
+                              color: course.access_mode === 'LINK' ? '#2563eb' : '#9333ea',
+                              border: `1px solid ${course.access_mode === 'LINK' ? '#93c5fd' : '#d8b4fe'}`,
                               fontSize: '11px',
                               fontWeight: 600,
                             }}
                           >
-                            {(course as any).access_mode === 'LINK' ? 'Chia sẻ link' : 'Chỉ định học viên'}
+                            {course.access_mode === 'LINK' ? 'Chia sẻ link' : 'Chỉ định học viên'}
                           </span>
                         )}
                       </div>

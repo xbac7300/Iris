@@ -48,12 +48,12 @@ export class CourseDto {
   @ApiProperty({ enum: ['DRAFT', 'PUBLISHED', 'ARCHIVED'] }) status!: string;
   @ApiProperty({ format: 'date-time' }) created_at!: string;
   @ApiProperty({ format: 'date-time' }) updated_at!: string;
-  @ApiPropertyOptional({ enum: ['PUBLISH', 'ARCHIVE', 'DELETE'] }) scheduled_action?: string | null;
-  @ApiPropertyOptional({ format: 'date-time' }) scheduled_at?: string | null;
-  @ApiPropertyOptional({ format: 'date-time' }) scheduled_until?: string | null;
+  @ApiPropertyOptional({ enum: ['PUBLISH', 'ARCHIVE', 'DELETE'], nullable: true }) scheduled_action?: string | null;
+  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true }) scheduled_at?: string | null;
+  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true }) scheduled_until?: string | null;
   @ApiPropertyOptional({ type: String, nullable: true }) action_reason?: string | null;
   @ApiPropertyOptional({ type: Boolean }) is_locked?: boolean;
-  @ApiPropertyOptional({ format: 'date-time' }) locked_at?: string | null;
+  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true }) locked_at?: string | null;
   @ApiPropertyOptional({ type: String, nullable: true }) locked_reason?: string | null;
   @ApiPropertyOptional({ enum: ACCESS_MODES, default: 'PUBLIC' }) access_mode?: AccessMode;
   @ApiPropertyOptional({ type: String, nullable: true }) share_code?: string | null;
@@ -162,20 +162,26 @@ export class CoursesController {
       ORDER BY c.created_at DESC, c.id LIMIT $2 OFFSET $3`,
       [request.principal.id, page.limit, page.offset, isInstructor, isAdmin, userEmail]
     );
-    return rows.map((r: any) => ({
+    return rows.map((r: Record<string, unknown>) => ({
       ...r,
-      tag: r.tag || 'CNTT & Phần mềm',
-      thumbnail_url: r.thumbnail_url || null,
-      scheduled_action: r.scheduled_action || null,
-      scheduled_at: r.scheduled_at ? new Date(r.scheduled_at).toISOString() : null,
-      scheduled_until: r.scheduled_until ? new Date(r.scheduled_until).toISOString() : null,
-      action_reason: r.action_reason || null,
+      id: String(r.id),
+      owner_id: String(r.owner_id),
+      title: String(r.title),
+      description: String(r.description ?? ''),
+      status: String(r.status),
+      structure_version: Number(r.structure_version ?? 1),
+      tag: String(r.tag || 'CNTT & Phần mềm'),
+      thumbnail_url: r.thumbnail_url ? String(r.thumbnail_url) : null,
+      scheduled_action: r.scheduled_action ? String(r.scheduled_action) : null,
+      scheduled_at: r.scheduled_at ? new Date(String(r.scheduled_at)).toISOString() : null,
+      scheduled_until: r.scheduled_until ? new Date(String(r.scheduled_until)).toISOString() : null,
+      action_reason: r.action_reason ? String(r.action_reason) : null,
       is_locked: Boolean(r.is_locked),
-      locked_at: r.locked_at ? new Date(r.locked_at).toISOString() : null,
-      locked_reason: r.locked_reason || null,
-      access_mode: r.access_mode || 'PUBLIC',
-      share_code: r.share_code || null,
-      allowed_emails: Array.isArray(r.allowed_emails) ? r.allowed_emails : [],
+      locked_at: r.locked_at ? new Date(String(r.locked_at)).toISOString() : null,
+      locked_reason: r.locked_reason ? String(r.locked_reason) : null,
+      access_mode: String(r.access_mode || 'PUBLIC'),
+      share_code: r.share_code ? String(r.share_code) : null,
+      allowed_emails: Array.isArray(r.allowed_emails) ? (r.allowed_emails as string[]) : [],
       avg_rating: Number(r.avg_rating || 0),
       review_count: Number(r.review_count || 0),
       like_count: Number(r.like_count || 0),
@@ -381,7 +387,9 @@ export class CoursesController {
     if (!isInstructor) throw new ForbiddenException('Chỉ giảng viên sở hữu mới được sửa thông tin khóa học.');
     const [existingCourse] = await this.db.query('SELECT owner_id, is_locked, locked_reason FROM courses WHERE id=$1', [id]);
     if (!existingCourse) throw new NotFoundException('Không tìm thấy khóa học.');
-    if (existingCourse.owner_id !== request.principal.id) throw new ForbiddenException('Chỉ giảng viên sở hữu mới được sửa thông tin khóa học.');
+    if (existingCourse.owner_id !== request.principal.id && !request.principal.roles.includes('ADMIN')) {
+      throw new NotFoundException('Không tìm thấy khóa học.');
+    }
     if (existingCourse.is_locked) {
       throw new ForbiddenException(`Khóa học này đang bị Quản trị viên khóa${existingCourse.locked_reason ? `: ${existingCourse.locked_reason}` : ''}. Không thể chỉnh sửa.`);
     }
@@ -493,7 +501,7 @@ export class CoursesController {
       return { success: true, id, scheduled: true };
     }
 
-    await this.deleteCourseCascade(id, request.principal.id, isAdmin, reason);
+    await this.deleteCourseCascade(id, request.principal.id, isAdmin);
     return { success: true, id };
   }
 
@@ -513,7 +521,7 @@ export class CoursesController {
           [c.id]
         );
       } else if (c.scheduled_action === 'DELETE') {
-        await this.deleteCourseCascade(c.id, undefined, true, c.action_reason);
+        await this.deleteCourseCascade(c.id, undefined, true);
       }
     }
 
@@ -522,13 +530,13 @@ export class CoursesController {
     );
     for (const c of rePublish) {
       await this.db.query(
-        "UPDATE courses SET status='PUBLISHED', scheduled_until=NULL, action_reason=NULL, updated_at=now() WHERE id=$1",
+        "UPDATE courses SET status='PUBLISHED', is_locked=FALSE, locked_at=NULL, locked_reason=NULL, locked_by=NULL, scheduled_until=NULL, action_reason=NULL, updated_at=now() WHERE id=$1",
         [c.id]
       );
     }
   }
 
-  private async deleteCourseCascade(id: string, actorId?: string, isAdmin = true, reason?: string | null): Promise<void> {
+  private async deleteCourseCascade(id: string, actorId?: string, isAdmin = true): Promise<void> {
     await this.db.transaction(async tx => {
       const [course] = await tx.query(
         actorId && !isAdmin

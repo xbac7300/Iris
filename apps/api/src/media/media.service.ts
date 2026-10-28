@@ -190,11 +190,22 @@ export class MediaService implements OnModuleDestroy {
     return this.db.query('SELECT * FROM modules WHERE course_id=$1 ORDER BY position LIMIT $2 OFFSET $3', [courseId, page.limit, page.offset]);
   }
   async requireRead(tx: EntityManager, courseId: string, principal: Principal): Promise<void> {
-    const [allowed] = await tx.query(`SELECT c.id FROM courses c WHERE c.id=$1 AND (
-      (c.owner_id=$2 AND $3::boolean) OR (c.status IN ('PUBLISHED','ARCHIVED') AND EXISTS(
+    await tx.query(
+      "UPDATE courses SET status='PUBLISHED', is_locked=FALSE, locked_at=NULL, locked_reason=NULL, locked_by=NULL, scheduled_until=NULL, action_reason=NULL, updated_at=now() WHERE id=$1 AND is_locked=TRUE AND scheduled_until IS NOT NULL AND scheduled_until <= now()",
+      [courseId]
+    ).catch(() => {});
+    const [allowed] = await tx.query(`SELECT c.id, c.is_locked, c.locked_reason, c.scheduled_until FROM courses c WHERE c.id=$1 AND (
+      $4::boolean OR (c.owner_id=$2 AND $3::boolean) OR (c.status IN ('PUBLISHED','ARCHIVED') AND EXISTS(
         SELECT 1 FROM enrollments e WHERE e.course_id=c.id AND e.user_id=$2 AND e.revoked_at IS NULL)))`,
-    [courseId, principal.id, principal.roles.includes('INSTRUCTOR')]);
+    [courseId, principal.id, principal.roles.includes('INSTRUCTOR'), principal.roles.includes('ADMIN')]);
     if (!allowed) throw new NotFoundException('Không tìm thấy nội dung được phép truy cập.');
+    if (allowed.is_locked && !principal.roles.includes('ADMIN')) {
+      const untilText = allowed.scheduled_until
+        ? ` đến ${new Date(allowed.scheduled_until).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}`
+        : '';
+      const reasonText = allowed.locked_reason ? `. Lý do: ${allowed.locked_reason}` : '';
+      throw new ForbiddenException(`Khóa học này đang bị Quản trị viên tạm khóa${untilText}${reasonText}.`);
+    }
   }
   async publish(courseId: string, principal: Principal, input?: { scheduled_at?: string }) {
     return this.db.transaction(async tx => {
@@ -266,7 +277,7 @@ export class MediaService implements OnModuleDestroy {
       return enrollment;
     });
   }
-  async upload(lessonId: string, size: number, principal: Principal) {
+  async upload(lessonId: string, size: number, principal: Principal, requestHost?: string) {
     const s3 = this.s3();
     if (size > s3.config.UPLOAD_MAX_BYTES) throw new UnprocessableEntityException('Video vượt giới hạn dung lượng.');
     return this.db.transaction(async tx => {
@@ -278,7 +289,7 @@ export class MediaService implements OnModuleDestroy {
       if (quota.count >= 20 || Number(quota.bytes) + size > 2 * 1024 ** 3) throw new HttpException('Đã hết hạn mức upload trong 24 giờ.', 429);
       const id = randomUUID();
       const key = `uploads/${lessonId}/${id}.mp4`;
-      const url = await s3.uploadUrl(key, size);
+      const url = await s3.uploadUrl(key, size, requestHost);
       await tx.query(`INSERT INTO media_assets(id,lesson_id,uploader_id,upload_key,expected_bytes,status)
         VALUES($1,$2,$3,$4,$5,'UPLOADING')`, [id, lessonId, principal.id, key, size]);
       if (lesson.active_index_id) {
@@ -319,12 +330,12 @@ export class MediaService implements OnModuleDestroy {
       return { job_id: jobId };
     });
   }
-  async playback(lessonId: string, principal: Principal) {
+  async playback(lessonId: string, principal: Principal, requestHost?: string) {
     const lesson = await this.lessonContext(this.db.manager, lessonId);
     await this.requireRead(this.db.manager, lesson.course_id, principal);
     const [asset] = await this.db.query("SELECT * FROM media_assets WHERE id=$1 AND status='READY'", [lesson.active_media_id]);
     if (!asset) throw new ConflictException('Video chưa sẵn sàng.');
-    const url = await this.s3().playbackUrl(asset.playback_key);
+    const url = await this.s3().playbackUrl(asset.playback_key, requestHost);
     await this.requireRead(this.db.manager, lesson.course_id, principal);
     return { lesson_id: lessonId, media_version: asset.id, duration_sec: asset.duration_sec, url, expires_in: 300, ai_status: lesson.active_index_id ? 'READY' : lesson.active_transcript_id ? 'INDEXING' : 'PROCESSING' };
   }

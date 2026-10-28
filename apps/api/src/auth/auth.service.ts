@@ -38,19 +38,36 @@ export class AuthService {
     }
   }
 
+  private buildLockMessage(user: { disabled_from?: string | Date | null; disabled_until?: string | Date | null; disabled_reason?: string | null }): string {
+    const fromDate = user.disabled_from ? new Date(user.disabled_from) : null;
+    const untilDate = user.disabled_until ? new Date(user.disabled_until) : null;
+    const fromText = fromDate && !isNaN(fromDate.getTime())
+      ? ` từ ${fromDate.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}`
+      : '';
+    const untilText = untilDate && !isNaN(untilDate.getTime())
+      ? `${fromText} đến ${untilDate.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}`
+      : ' vĩnh viễn';
+    const reasonText = user.disabled_reason ? `. Lý do: ${user.disabled_reason}` : '';
+    return `Tài khoản của bạn đã bị khóa${untilText}${reasonText}.`;
+  }
+
+  private isUserCurrentlyLocked(user: { disabled?: boolean; disabled_from?: string | Date | null; disabled_until?: string | Date | null }): boolean {
+    if (!user.disabled) return false;
+    const now = new Date();
+    if (user.disabled_until && new Date(user.disabled_until) <= now) return false;
+    if (user.disabled_from && new Date(user.disabled_from) > now) return false;
+    return true;
+  }
+
   async login(input: LoginDto) {
-    const [user] = await this.db.query('SELECT id,password_hash,disabled,disabled_until,disabled_reason FROM users WHERE email=$1', [input.email]);
+    const [user] = await this.db.query('SELECT id,password_hash,disabled,disabled_from,disabled_until,disabled_reason FROM users WHERE email=$1', [input.email]);
     const valid = await verifyPassword(input.password, user?.password_hash ?? await this.dummyHash);
     if (!user || !valid) throw new UnauthorizedException('Thông tin đăng nhập không hợp lệ.');
     if (user.disabled) {
       if (user.disabled_until && new Date(user.disabled_until) <= new Date()) {
-        await this.db.query('UPDATE users SET disabled=false, disabled_until=NULL, disabled_reason=NULL WHERE id=$1', [user.id]);
-      } else {
-        const untilText = user.disabled_until
-          ? ` đến ${new Date(user.disabled_until).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}`
-          : ' vĩnh viễn';
-        const reasonText = user.disabled_reason ? `. Lý do: ${user.disabled_reason}` : '';
-        throw new UnauthorizedException(`Tài khoản của bạn đã bị khóa${untilText}${reasonText}.`);
+        await this.db.query('UPDATE users SET disabled=false, disabled_from=NULL, disabled_until=NULL, disabled_reason=NULL WHERE id=$1', [user.id]);
+      } else if (this.isUserCurrentlyLocked(user)) {
+        throw new UnauthorizedException(this.buildLockMessage(user));
       }
     }
     return this.db.transaction(async tx => {
@@ -78,14 +95,23 @@ export class AuthService {
   async refresh(token: string, clientType: string) {
     if (!/^[a-f0-9]{64}$/.test(token)) throw new UnauthorizedException('Phiên không hợp lệ.');
     const tokenHash = digest(token);
+    let lockMessage: string | null = null;
     const result = await this.db.transaction(async tx => {
       // Khóa phiên trước khi đọc trạng thái token để hai lần refresh không cùng thành công.
       const [session] = await tx.query(`SELECT s.* FROM sessions s JOIN refresh_tokens t ON t.session_id=s.id
         WHERE t.token_hash=$1 FOR UPDATE OF s`, [tokenHash]);
-      if (!session || session.client_type !== clientType || session.revoked_at || new Date(session.expires_at) <= new Date()) return null;
+      if (!session || session.client_type !== clientType) return null;
+      const [user] = await tx.query('SELECT id, disabled, disabled_from, disabled_until, disabled_reason FROM users WHERE id=$1', [session.user_id]);
+      if (user?.disabled && user.disabled_until && new Date(user.disabled_until) <= new Date()) {
+        await tx.query('UPDATE users SET disabled=false, disabled_from=NULL, disabled_until=NULL, disabled_reason=NULL WHERE id=$1', [user.id]);
+        user.disabled = false;
+      }
+      const isStillDisabled = user ? this.isUserCurrentlyLocked(user) : false;
+      if (isStillDisabled && user) {
+        lockMessage = this.buildLockMessage(user);
+      }
+      if (session.revoked_at || new Date(session.expires_at) <= new Date()) return null;
       const [tokenRow] = await tx.query('SELECT consumed_at FROM refresh_tokens WHERE token_hash=$1', [tokenHash]);
-      const [user] = await tx.query('SELECT disabled, disabled_until FROM users WHERE id=$1', [session.user_id]);
-      const isStillDisabled = user.disabled && (!user.disabled_until || new Date(user.disabled_until) > new Date());
       if (tokenRow.consumed_at || isStillDisabled) {
         // Không throw trong transaction: cần commit thao tác thu hồi khi phát hiện dùng lại.
         await tx.query('UPDATE sessions SET revoked_at=now() WHERE id=$1', [session.id]);
@@ -94,7 +120,7 @@ export class AuthService {
       await tx.query('UPDATE refresh_tokens SET consumed_at=now() WHERE token_hash=$1', [tokenHash]);
       return this.issueTokens(tx, session.id, session.user_id);
     });
-    if (!result) throw new UnauthorizedException('Phiên hết hạn hoặc đã bị thu hồi.');
+    if (!result) throw new UnauthorizedException(lockMessage || 'Phiên hết hạn hoặc đã bị thu hồi.');
     return result;
   }
 
@@ -110,11 +136,22 @@ export class AuthService {
       claims = await this.jwt.verifyAsync(token, { algorithms: ['HS256'], issuer: 'topic16-api', audience: 'topic16-clients' });
       if (!/^[a-f0-9-]{36}$/i.test(claims.sub) || !/^[a-f0-9-]{36}$/i.test(claims.sid)) throw new Error();
     } catch { throw new UnauthorizedException('Access token không hợp lệ.'); }
-    const [session] = await this.db.query(`SELECT s.client_type FROM sessions s JOIN users u ON u.id=s.user_id
-      WHERE s.id=$1 AND s.user_id=$2 AND s.revoked_at IS NULL AND s.expires_at>now()
-        AND (NOT u.disabled OR (u.disabled_until IS NOT NULL AND u.disabled_until <= now()))`, [claims.sid, claims.sub]);
-    if (!session) throw new UnauthorizedException('Phiên đã bị thu hồi hoặc tài khoản đang bị khóa.');
-    return { ...await this.user(this.db.manager, claims.sub), session_id: claims.sid, client_type: session.client_type };
+    const [row] = await this.db.query(`SELECT s.client_type, s.revoked_at, s.expires_at,
+        u.disabled, u.disabled_from, u.disabled_until, u.disabled_reason
+      FROM sessions s JOIN users u ON u.id=s.user_id
+      WHERE s.id=$1 AND s.user_id=$2`, [claims.sid, claims.sub]);
+    if (!row) throw new UnauthorizedException('Phiên đã bị thu hồi hoặc không tồn tại.');
+    if (row.disabled && row.disabled_until && new Date(row.disabled_until) <= new Date()) {
+      await this.db.query('UPDATE users SET disabled=false, disabled_from=NULL, disabled_until=NULL, disabled_reason=NULL WHERE id=$1', [claims.sub]);
+      row.disabled = false;
+    }
+    if (this.isUserCurrentlyLocked(row)) {
+      throw new UnauthorizedException(this.buildLockMessage(row));
+    }
+    if (row.revoked_at || new Date(row.expires_at) <= new Date()) {
+      throw new UnauthorizedException('Phiên đã bị thu hồi hoặc hết hạn.');
+    }
+    return { ...await this.user(this.db.manager, claims.sub), session_id: claims.sid, client_type: row.client_type };
   }
 
   async logout(principal: Principal): Promise<void> {

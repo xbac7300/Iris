@@ -5,5 +5,6 @@ export default tseslint.config(
   { files: ['**/*.{js,cjs,mjs,ts,tsx}'], rules: {
     '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
     '@typescript-eslint/no-require-imports': 'off',
+    '@typescript-eslint/no-explicit-any': 'warn',
   } },
 );

@@ -31,6 +31,28 @@ interface AnswerState {
   file_name?: string;
 }
 
+interface AttemptDetail extends Attempt {
+  user_id?: string;
+  user_name?: string;
+  user_email?: string;
+  created_at?: string;
+  submitted_at?: string | null;
+  graded_at?: string | null;
+  graded_by?: string | null;
+  instructor_feedback?: string | null;
+  answers?: {
+    question_id: string;
+    option_id?: string | null;
+    text_response?: string | null;
+    file_url?: string | null;
+    file_name?: string | null;
+    question_text?: string;
+    question_type?: string;
+    option_text?: string | null;
+    is_correct?: boolean | null;
+  }[];
+}
+
 export function QuizCard({
   quiz,
   editable,
@@ -42,22 +64,22 @@ export function QuizCard({
   owner: boolean;
   onDeleted?: () => void;
 }) {
-  const [attempt, setAttempt] = useState<Attempt | null>(null);
+  const [attempt, setAttempt] = useState<AttemptDetail | null>(null);
   const [answers, setAnswers] = useState<Record<string, AnswerState>>({});
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
 
   // Lịch sử bài làm của học viên
-  const [myAttempts, setMyAttempts] = useState<any[]>([]);
+  const [myAttempts, setMyAttempts] = useState<AttemptDetail[]>([]);
   const [showReviewModal, setShowReviewModal] = useState(false);
-  const [reviewAttempt, setReviewAttempt] = useState<any | null>(null);
+  const [reviewAttempt, setReviewAttempt] = useState<AttemptDetail | null>(null);
   const [reviewBusy, setReviewBusy] = useState(false);
 
   // Danh sách bài nộp và chấm bài dành cho Giảng viên
   const [showSubmissionsModal, setShowSubmissionsModal] = useState(false);
-  const [submissions, setSubmissions] = useState<any[]>([]);
-  const [gradingSubmission, setGradingSubmission] = useState<any | null>(null);
+  const [submissions, setSubmissions] = useState<AttemptDetail[]>([]);
+  const [gradingSubmission, setGradingSubmission] = useState<AttemptDetail | null>(null);
   const [gradingScore, setGradingScore] = useState<number>(0);
   const [gradingPassed, setGradingPassed] = useState<boolean>(false);
   const [gradingFeedback, setGradingFeedback] = useState<string>('');
@@ -67,13 +89,14 @@ export function QuizCard({
     // Chỉ tải nếu là học viên (không phải chế độ giảng viên chấm bài)
     if (owner) return;
     try {
-      const { data } = await session.api.GET('/api/v1/quizzes/{id}/my-attempts' as any, {
+      const { data } = await session.api.GET('/api/v1/quizzes/{id}/my-attempts', {
         params: { path: { id: quiz.id } },
       });
       if (data && Array.isArray(data)) {
-        setMyAttempts(data);
-        if (data.length > 0) {
-          setAttempt(prev => (prev?.status === 'IN_PROGRESS' ? prev : data[0]));
+        const list = data as unknown as AttemptDetail[];
+        setMyAttempts(list);
+        if (list.length > 0) {
+          setAttempt(prev => (prev?.status === 'IN_PROGRESS' ? prev : list[0]));
         }
       }
     } catch {
@@ -84,11 +107,11 @@ export function QuizCard({
   const loadSubmissions = useCallback(async () => {
     if (!owner && !editable) return;
     try {
-      const { data } = await session.api.GET('/api/v1/quizzes/{id}/submissions' as any, {
+      const { data } = await session.api.GET('/api/v1/quizzes/{id}/submissions', {
         params: { path: { id: quiz.id } },
       });
       if (data && Array.isArray(data)) {
-        setSubmissions(data);
+        setSubmissions(data as unknown as AttemptDetail[]);
       }
     } catch {
       // Bỏ qua lỗi
@@ -172,7 +195,7 @@ export function QuizCard({
     }
 
     const totalSeconds = quiz.time_limit_minutes * 60;
-    const startTime = (attempt as any).created_at ? new Date((attempt as any).created_at).getTime() : Date.now();
+    const startTime = attempt.created_at ? new Date(attempt.created_at).getTime() : Date.now();
     const calculateRemaining = () => {
       const elapsed = Math.floor((Date.now() - startTime) / 1000);
       return Math.max(0, totalSeconds - elapsed);
@@ -203,16 +226,16 @@ export function QuizCard({
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   }
 
-  async function openReview(targetAttempt?: any) {
+  async function openReview(targetAttempt?: AttemptDetail) {
     const a = targetAttempt || attempt || myAttempts[0];
     if (!a) return;
     setReviewBusy(true);
     try {
-      const { data, error } = await session.api.GET('/api/v1/attempts/{id}' as any, {
+      const { data, error } = await session.api.GET('/api/v1/attempts/{id}', {
         params: { path: { id: a.id } },
       });
       if (error) throw new Error(error.message);
-      setReviewAttempt(data || a);
+      setReviewAttempt((data as AttemptDetail) || a);
       setShowReviewModal(true);
     } catch (e) {
       setMessage(e instanceof Error ? e.message : 'Chưa tải được chi tiết bài làm.');
@@ -221,18 +244,20 @@ export function QuizCard({
     }
   }
 
-  async function openGrading(sub: any) {
+  async function openGrading(sub: AttemptDetail) {
     setGradingBusy(true);
     try {
-      const { data, error } = await session.api.GET('/api/v1/attempts/{id}' as any, {
+      const { data, error } = await session.api.GET('/api/v1/attempts/{id}', {
         params: { path: { id: sub.id } },
       });
       if (error) throw new Error(error.message);
-      const detailed = data || sub;
+      const detailed = (data as AttemptDetail) || sub;
       setGradingSubmission(detailed);
+      const qCount = detailed.question_count ?? 0;
+      const cCount = detailed.correct_count ?? 0;
       const initialScore = detailed.score !== null && detailed.score !== undefined
         ? Number(detailed.score)
-        : detailed.question_count > 0 ? (detailed.correct_count / detailed.question_count) * 100 : 0;
+        : qCount > 0 ? (cCount / qCount) * 100 : 0;
       setGradingScore(Math.round(initialScore * 10) / 10);
       setGradingPassed(detailed.passed ?? (initialScore >= quiz.pass_threshold));
       setGradingFeedback(detailed.instructor_feedback || '');
@@ -248,7 +273,7 @@ export function QuizCard({
     setGradingBusy(true);
     setMessage('');
     try {
-      const { error } = await session.api.POST('/api/v1/attempts/{id}/grade' as any, {
+      const { error } = await session.api.POST('/api/v1/attempts/{id}/grade', {
         params: { path: { id: gradingSubmission.id } },
         body: {
           score: gradingScore,
@@ -256,7 +281,7 @@ export function QuizCard({
           instructor_feedback: gradingFeedback.trim(),
         },
       });
-      if (error) throw new Error((error as any).message);
+      if (error) throw new Error(error.message);
       setMessage(`Đã lưu kết quả chấm bài của ${gradingSubmission.user_name || 'học viên'} thành công.`);
       setGradingSubmission(null);
       await loadSubmissions();
@@ -407,7 +432,7 @@ export function QuizCard({
               </>
             ) : (
               <>
-                Điểm trắc nghiệm tạm tính: <strong>{latestSubmitted.score !== null && latestSubmitted.score !== undefined ? Number(latestSubmitted.score).toFixed(1) : ((latestSubmitted.correct_count / (latestSubmitted.question_count || 1)) * 100).toFixed(1)} / 100</strong>. Đang chờ giảng viên chấm bài và ghi nhận điểm chính thức.
+                Điểm trắc nghiệm tạm tính: <strong>{latestSubmitted.score !== null && latestSubmitted.score !== undefined ? Number(latestSubmitted.score).toFixed(1) : (((latestSubmitted.correct_count ?? 0) / (latestSubmitted.question_count || 1)) * 100).toFixed(1)} / 100</strong>. Đang chờ giảng viên chấm bài và ghi nhận điểm chính thức.
               </>
             )}
             {latestSubmitted.submitted_at && ` · Nộp lúc: ${new Date(latestSubmitted.submitted_at).toLocaleString('vi-VN')}`}
@@ -478,7 +503,7 @@ export function QuizCard({
           </p>
 
           {quiz.questions.map((q, idx) => {
-            const qType = (q as any).question_type || 'MULTIPLE_CHOICE';
+            const qType = q.question_type || 'MULTIPLE_CHOICE';
             return (
               <fieldset key={q.id} style={{ margin: '14px 0', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '14px' }}>
                 <legend style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>
@@ -610,7 +635,7 @@ export function QuizCard({
               <div>
                 <h3 style={{ margin: '0 0 4px', fontSize: '18px' }}>Chi tiết bài làm: {quiz.title}</h3>
                 <span className="small" style={{ color: 'var(--text-muted)' }}>
-                  Lượt nộp {reviewAttempt.attempt_number} · Điểm số: {reviewAttempt.score !== null && reviewAttempt.score !== undefined ? Number(reviewAttempt.score).toFixed(1) : ((reviewAttempt.correct_count / (reviewAttempt.question_count || 1)) * 100).toFixed(1)} / 100 điểm · [{reviewAttempt.passed ? 'ĐẠT' : 'CHƯA ĐẠT'}]
+                  Lượt nộp {reviewAttempt.attempt_number} · Điểm số: {reviewAttempt.score !== null && reviewAttempt.score !== undefined ? Number(reviewAttempt.score).toFixed(1) : (((reviewAttempt.correct_count ?? 0) / (reviewAttempt.question_count || 1)) * 100).toFixed(1)} / 100 điểm · [{reviewAttempt.passed ? 'ĐẠT' : 'CHƯA ĐẠT'}]
                 </span>
               </div>
               <button
@@ -652,8 +677,8 @@ export function QuizCard({
 
             <div style={{ display: 'grid', gap: '14px' }}>
               {quiz.questions.map((q, idx) => {
-                const ans = (reviewAttempt.answers || []).find((a: any) => a.question_id === q.id);
-                const qType = (q as any).question_type || 'MULTIPLE_CHOICE';
+                const ans = (reviewAttempt.answers || []).find(a => a.question_id === q.id);
+                const qType = q.question_type || 'MULTIPLE_CHOICE';
 
                 return (
                   <div
@@ -811,8 +836,8 @@ export function QuizCard({
 
                 <div style={{ display: 'grid', gap: '14px', marginBottom: '20px' }}>
                   {quiz.questions.map((q, idx) => {
-                    const ans = (gradingSubmission.answers || []).find((a: any) => a.question_id === q.id);
-                    const qType = (q as any).question_type || 'MULTIPLE_CHOICE';
+                    const ans = (gradingSubmission.answers || []).find(a => a.question_id === q.id);
+                    const qType = q.question_type || 'MULTIPLE_CHOICE';
 
                     return (
                       <div
@@ -1017,7 +1042,7 @@ export function QuizCard({
                               <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{sub.user_email}</span>
                             </td>
                             <td style={{ padding: '8px' }}>Lượt {sub.attempt_number}</td>
-                            <td style={{ padding: '8px' }}>{new Date(sub.submitted_at).toLocaleString('vi-VN')}</td>
+                            <td style={{ padding: '8px' }}>{sub.submitted_at ? new Date(sub.submitted_at).toLocaleString('vi-VN') : ''}</td>
                             <td style={{ padding: '8px' }}>
                               <strong>{sub.score !== null && sub.score !== undefined ? `${Number(sub.score).toFixed(1)}/100` : 'Chưa chấm'}</strong>
                             </td>
@@ -1137,7 +1162,7 @@ export function QuizCreatorForm({
           max_attempts: maxAttempts,
           time_limit_minutes: timeLimitMode === 'LIMITED' ? Number(timeLimitMinutes) : null,
           questions: payloadQuestions,
-        } as any,
+        },
       });
 
       if (error) throw new Error(error.message);
@@ -1403,7 +1428,7 @@ export function ChapterQuizSection({
         params: { path: { id: courseId } },
       });
       if (data) {
-        setQuizzes(data.filter(q => (q as any).module_id === moduleId && !(q as any).lesson_id));
+        setQuizzes(data.filter(q => q.module_id === moduleId && !q.lesson_id));
       }
     } catch {
       // Bỏ qua lỗi
@@ -1477,7 +1502,7 @@ export function LessonQuizSection({
         params: { path: { id: courseId } },
       });
       if (data) {
-        setQuizzes(data.filter(q => (q as any).lesson_id === lessonId));
+        setQuizzes(data.filter(q => q.lesson_id === lessonId));
       }
     } catch {
       // Bỏ qua lỗi
@@ -1534,11 +1559,9 @@ export function LessonQuizSection({
 export function CourseLearning({
   courseId,
   owner,
-  editable,
 }: {
   courseId: string;
   owner: boolean;
-  editable: boolean;
 }) {
   const [progress, setProgress] = useState<Progress | null>(null);
   const [analytics, setAnalytics] = useState<Analytics | null>(null);

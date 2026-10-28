@@ -18,12 +18,12 @@ export class SessionClient {
   private readonly raw;
   readonly api;
   user: User | null = null;
-  private readonly clearListeners = new Set<() => void>();
-  onClear(listener: () => void): () => void { this.clearListeners.add(listener); return () => { this.clearListeners.delete(listener); }; }
+  private readonly clearListeners = new Set<(reason?: string) => void>();
+  onClear(listener: (reason?: string) => void): () => void { this.clearListeners.add(listener); return () => { this.clearListeners.delete(listener); }; }
 
   constructor(private readonly options: {
     baseUrl: string; kind: 'web' | 'mobile'; storage?: TokenStorage;
-    fetch?: typeof fetch; onClear?: () => void;
+    fetch?: typeof fetch; onClear?: (reason?: string) => void;
   }) {
     if (options.kind === 'mobile' && !options.storage) throw new Error('Mobile cần SecureStore adapter.');
     const settings = { baseUrl: options.baseUrl, credentials: options.kind === 'web' ? 'include' as const : 'omit' as const,
@@ -58,7 +58,7 @@ export class SessionClient {
   async register(input: Credentials & { display_name: string; role?: 'STUDENT' | 'INSTRUCTOR' }): Promise<void> {
     await this.clear();
     const epoch = this.epoch;
-    const { data, error } = await this.raw.POST('/api/v1/auth/register', { body: { ...input, client_type: this.options.kind } as any });
+    const { data, error } = await this.raw.POST('/api/v1/auth/register', { body: { ...input, client_type: this.options.kind } });
     if (!data) throw new Error(error?.message ?? 'Không thể đăng ký.');
     await this.accept(data, epoch);
   }
@@ -78,7 +78,7 @@ export class SessionClient {
       if (!data) throw new Error(error?.message ?? 'Phiên đã hết hạn.');
       await this.accept(data, epoch);
     })().catch(async error => {
-      if (epoch === this.epoch) await this.clear();
+      if (epoch === this.epoch) await this.clear(error instanceof Error ? error.message : undefined);
       throw error;
     });
     this.refreshFlight = pending;
@@ -113,10 +113,10 @@ export class SessionClient {
     } finally { await this.clear(); }
   }
 
-  async clear(): Promise<void> {
+  async clear(reason?: string): Promise<void> {
     this.epoch++; this.accessToken = null; this.user = null; this.refreshFlight = null;
-    this.options.onClear?.();
-    for (const listener of this.clearListeners) listener();
+    this.options.onClear?.(reason);
+    for (const listener of this.clearListeners) listener(reason);
     if (this.options.storage) await this.mutateStorage(() => this.options.storage!.remove());
   }
 }

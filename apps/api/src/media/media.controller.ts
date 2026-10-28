@@ -57,14 +57,14 @@ export class MediaController {
   enroll(@Param('id', new ParseUUIDPipe()) id: string, @Req() req: AuthRequest) { return this.media.enroll(id, req.principal); }
   @Post('lessons/:id/upload-url') @ApiCreatedResponse({ type: UploadResultDto })
   upload(@Param('id', new ParseUUIDPipe()) id: string, @Body() input: UploadDto, @Req() req: AuthRequest) {
-    return this.media.upload(id, input.size_bytes, req.principal);
+    return this.media.upload(id, input.size_bytes, req.principal, req.headers.host);
   }
   @Post('lessons/:id/upload-complete') @HttpCode(202) @ApiAcceptedResponse({ type: AcceptedJobDto })
   complete(@Param('id', new ParseUUIDPipe()) id: string, @Body() input: UploadCompleteDto, @Req() req: AuthRequest) {
     return this.media.complete(id, input.media_id, req.principal);
   }
   @Get('lessons/:id/playback') @ApiOkResponse({ type: PlaybackDto })
-  playback(@Param('id', new ParseUUIDPipe()) id: string, @Req() req: AuthRequest) { return this.media.playback(id, req.principal); }
+  playback(@Param('id', new ParseUUIDPipe()) id: string, @Req() req: AuthRequest) { return this.media.playback(id, req.principal, req.headers.host); }
   @Get('jobs/:id') @ApiOkResponse({ type: JobDto })
   job(@Param('id', new ParseUUIDPipe()) id: string, @Req() req: AuthRequest) { return this.media.job(id, req.principal); }
   @Post('jobs/:id/retry') @HttpCode(202) @ApiAcceptedResponse({ type: AcceptedJobDto })

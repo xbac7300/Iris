@@ -17,10 +17,9 @@ export class QuizInputDto {
   @ApiProperty({ default: true, type: Boolean }) @IsBoolean() required: boolean = true;
   @ApiProperty({ default: 70, type: Number }) @IsNumber({ maxDecimalPlaces: 2 }) @Min(0) @Max(100) pass_threshold: number = 70;
   @ApiProperty({ default: 3, type: Number }) @IsInt() @Min(1) @Max(3) max_attempts: number = 3;
+  @ApiPropertyOptional({ type: Number, nullable: true }) @IsOptional() @IsInt() @Min(0) @Max(600) time_limit_minutes?: number | null;
   @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true }) @IsOptional() @IsUUID() module_id?: string | null;
   @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true }) @IsOptional() @IsUUID() lesson_id?: string | null;
-  @ApiPropertyOptional({ type: Number, nullable: true, description: 'Giới hạn thời gian (phút), null hoặc 0 là không giới hạn' })
-  @IsOptional() @IsInt() @Min(0) @Max(300) time_limit_minutes?: number | null;
   @ApiProperty({ type: [QuizQuestionInput] }) @IsArray() @ArrayMinSize(1) @ArrayMaxSize(50) @ValidateNested({ each: true }) @Type(() => QuizQuestionInput) questions!: QuizQuestionInput[];
 }
 export class QuizOptionDto { @ApiProperty() id!: string; @ApiProperty() text!: string; }
@@ -53,6 +52,11 @@ export class SubmitDto {
   @ApiProperty() @IsUUID() idempotency_key!: string;
   @ApiProperty({ type: [AnswerInputDto] }) @IsArray() @ArrayMaxSize(50) @ValidateNested({ each: true }) @Type(() => AnswerInputDto) answers!: AnswerInputDto[];
 }
+export class GradeAttemptDto {
+  @ApiProperty({ type: Number }) @IsNumber() @Min(0) @Max(100) score!: number;
+  @ApiPropertyOptional({ type: Boolean }) @IsOptional() @IsBoolean() passed?: boolean;
+  @ApiPropertyOptional({ type: String }) @IsOptional() @IsString() @MaxLength(2000) instructor_feedback?: string;
+}
 export class AttemptDto {
   @ApiProperty() id!: string;
   @ApiProperty() quiz_id!: string;
@@ -64,6 +68,41 @@ export class AttemptDto {
   @ApiProperty({ type: Number, nullable: true }) question_count!: number | null;
   @ApiProperty({ type: Number, nullable: true }) score!: number | null;
   @ApiProperty({ type: Boolean, nullable: true }) passed!: boolean | null;
+  @ApiPropertyOptional({ type: String, nullable: true }) instructor_feedback?: string | null;
+  @ApiPropertyOptional({ type: String, nullable: true }) graded_at?: string | null;
+  @ApiPropertyOptional({ type: String, nullable: true }) submitted_at?: string | null;
+}
+
+export class AttemptAnswerDetailDto {
+  @ApiProperty() question_id!: string;
+  @ApiPropertyOptional() question_text?: string;
+  @ApiPropertyOptional() question_type?: string;
+  @ApiPropertyOptional() position?: number;
+  @ApiPropertyOptional({ type: String, nullable: true }) option_id?: string | null;
+  @ApiPropertyOptional({ type: String, nullable: true }) option_text?: string | null;
+  @ApiPropertyOptional({ type: Boolean, nullable: true }) is_correct?: boolean | null;
+  @ApiPropertyOptional({ type: String, nullable: true }) text_response?: string | null;
+  @ApiPropertyOptional({ type: String, nullable: true }) file_url?: string | null;
+  @ApiPropertyOptional({ type: String, nullable: true }) file_name?: string | null;
+}
+
+export class AttemptDetailDto extends AttemptDto {
+  @ApiPropertyOptional() user_id?: string;
+  @ApiPropertyOptional({ type: [AttemptAnswerDetailDto] }) answers?: AttemptAnswerDetailDto[];
+}
+
+export class QuizSubmissionSummaryDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() user_id!: string;
+  @ApiProperty() user_name!: string;
+  @ApiProperty() user_email!: string;
+  @ApiProperty() attempt_number!: number;
+  @ApiProperty() status!: string;
+  @ApiPropertyOptional({ type: Number, nullable: true }) score?: number | null;
+  @ApiProperty() passed!: boolean;
+  @ApiPropertyOptional({ type: String, nullable: true }) submitted_at?: string | null;
+  @ApiPropertyOptional({ type: String, nullable: true }) instructor_feedback?: string | null;
+  @ApiPropertyOptional({ type: String, nullable: true }) graded_at?: string | null;
 }
 export class WatchEventDto {
   @ApiProperty() @IsUUID() event_id!:string; @ApiProperty() @IsUUID() session_id!:string; @ApiProperty() @IsUUID() media_version!:string;

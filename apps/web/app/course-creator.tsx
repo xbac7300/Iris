@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, FormEvent } from 'react';
-import type { components } from '@lms/api-client';
+import type { components, CourseTag } from '@lms/api-client';
 import { COURSE_TAGS } from '@lms/api-client';
 import { session } from './session';
 import { processImageFile } from './image-utils';
@@ -16,7 +16,7 @@ export function CourseCreator({
   onCreated: (course: Course) => void;
 }) {
   const [title, setTitle] = useState('');
-  const [tag, setTag] = useState<string>('CNTT & Phần mềm');
+  const [tag, setTag] = useState<CourseTag>('CNTT & Phần mềm');
   const [description, setDescription] = useState('');
   const [thumbnailUrl, setThumbnailUrl] = useState<string>('');
   const [accessMode, setAccessMode] = useState<'PUBLIC' | 'LINK' | 'RESTRICTED'>('PUBLIC');
@@ -69,7 +69,7 @@ export function CourseCreator({
           thumbnail_url: thumbnailUrl || undefined,
           access_mode: accessMode,
           allowed_emails: accessMode === 'RESTRICTED' ? parsedEmails : [],
-        } as any,
+        },
       });
 
       if (error || !data) {
@@ -120,7 +120,7 @@ export function CourseCreator({
             Chủ đề / Phân loại
             <select
               value={tag}
-              onChange={(e) => setTag(e.target.value)}
+              onChange={(e) => setTag(e.target.value as CourseTag)}
               style={{ fontSize: '14px', padding: '10px 14px', height: '44px' }}
             >
               {COURSE_TAGS.map((t) => (
