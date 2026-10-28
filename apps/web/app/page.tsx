@@ -372,23 +372,21 @@ export default function Home() {
   const roleCourses = instructor && user
     ? courses.filter(c => c.owner_id === user.id)
     : courses.filter(c => {
-        // Giảng viên xem khóa học do chính mình tạo
-        if (c.owner_id === user?.id) return true;
-        // Khóa học công khai: hiển thị cho tất cả
-        if (!c.access_mode || c.access_mode === 'PUBLIC') return true;
-        // Học viên đã tham gia / đăng ký khóa học: luôn hiển thị
+        // Trong chế độ Học viên:
+        // Khóa học đã tham gia/đăng ký: luôn hiển thị
         if (c.user_enrolled) return true;
+        // Khóa học chia sẻ link: BẮT BUỘC ẨN KHỎI DANH MỤC KHÁM PHÁ (chỉ vào được khi có liên kết trực tiếp)
+        if (c.access_mode === 'LINK') {
+          return false;
+        }
         // Khóa học chỉ định: chỉ hiển thị nếu học viên được mời (email nằm trong allowed_emails)
         if (c.access_mode === 'RESTRICTED') {
           const userEmail = user?.email?.toLowerCase().trim();
           if (!userEmail) return false;
           return Array.isArray(c.allowed_emails) && c.allowed_emails.some((e: string) => e.toLowerCase().trim() === userEmail);
         }
-        // Khóa học share link: ẩn khỏi Khám phá / Tất cả khóa học (chỉ hiện khi đã tham gia)
-        if (c.access_mode === 'LINK') {
-          return false;
-        }
-        return true;
+        // Khóa học công khai: hiển thị cho tất cả
+        return !c.access_mode || c.access_mode === 'PUBLIC';
       });
   const filtered = roleCourses
     .filter(c => {

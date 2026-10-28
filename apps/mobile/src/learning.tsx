@@ -14,6 +14,7 @@ import {
   View,
 } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
+import * as DocumentPicker from 'expo-document-picker';
 import { randomUUID } from 'expo-crypto';
 import { components, ProgressTracker } from '@lms/api-client';
 import { session } from './session';
@@ -444,6 +445,27 @@ export function NativeQuiz({
   const [gradingFeedback, setGradingFeedback] = useState<string>('');
   const [gradingBusy, setGradingBusy] = useState(false);
 
+  const pickDocument = async (questionId: string) => {
+    try {
+      const res = await DocumentPicker.getDocumentAsync({
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (!res.canceled && res.assets && res.assets.length > 0) {
+        const asset = res.assets[0];
+        setAnswers(a => ({
+          ...a,
+          [questionId]: {
+            ...a[questionId],
+            file_name: asset.name,
+          },
+        }));
+      }
+    } catch {
+      // Bỏ qua lỗi chọn tệp
+    }
+  };
+
   const loadMyAttempts = useCallback(async () => {
     if (isOwner || !session) return;
     try {
@@ -760,18 +782,81 @@ export function NativeQuiz({
 
                     {/* File upload input */}
                     {qType === 'FILE_UPLOAD' && (
-                      <TextInput
-                        style={[styles.fileInput, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder, color: colors.text }]}
-                        placeholder="Nhập tên tài liệu hoặc liên kết nộp bài..."
-                        placeholderTextColor={colors.textMuted}
-                        value={answers[q.id]?.file_name || ''}
-                        onChangeText={fn =>
-                          setAnswers(a => ({
-                            ...a,
-                            [q.id]: { ...a[q.id], file_name: fn },
-                          }))
-                        }
-                      />
+                      <View style={{ marginTop: 8 }}>
+                        {answers[q.id]?.file_name ? (
+                          <View
+                            style={{
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              backgroundColor: colors.cardElevated,
+                              borderColor: colors.border,
+                              borderWidth: 1,
+                              borderRadius: 8,
+                              padding: 12,
+                            }}
+                          >
+                            <View style={{ flex: 1, marginRight: 8 }}>
+                              <Text style={{ fontSize: 13, fontWeight: '700', color: colors.text }} numberOfLines={1}>
+                                {answers[q.id]?.file_name}
+                              </Text>
+                              <Text style={{ fontSize: 11, color: colors.primary, marginTop: 2 }}>
+                                Đã sẵn sàng nộp kèm bài thi
+                              </Text>
+                            </View>
+                            <View style={{ flexDirection: 'row', gap: 6 }}>
+                              <TouchableOpacity
+                                style={{
+                                  backgroundColor: colors.primaryLight,
+                                  paddingVertical: 6,
+                                  paddingHorizontal: 10,
+                                  borderRadius: 6,
+                                }}
+                                onPress={() => void pickDocument(q.id)}
+                              >
+                                <Text style={{ fontSize: 12, fontWeight: '600', color: colors.primary }}>Đổi tệp</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                style={{
+                                  backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                                  paddingVertical: 6,
+                                  paddingHorizontal: 10,
+                                  borderRadius: 6,
+                                }}
+                                onPress={() =>
+                                  setAnswers(a => ({
+                                    ...a,
+                                    [q.id]: { ...a[q.id], file_name: undefined },
+                                  }))
+                                }
+                              >
+                                <Text style={{ fontSize: 12, fontWeight: '600', color: '#ef4444' }}>Xóa</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        ) : (
+                          <TouchableOpacity
+                            style={{
+                              borderWidth: 1.5,
+                              borderStyle: 'dashed',
+                              borderColor: colors.primary,
+                              backgroundColor: colors.primaryLight,
+                              borderRadius: 10,
+                              padding: 16,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            }}
+                            onPress={() => void pickDocument(q.id)}
+                          >
+                            <Text style={{ fontSize: 14, fontWeight: '700', color: colors.primary }}>
+                              Tải lên tệp tài liệu nộp bài
+                            </Text>
+                            <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 4 }}>
+                              Chọn tệp từ điện thoại (PDF, Word, Ảnh, Zip...)
+                            </Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
                     )}
                   </View>
                 );

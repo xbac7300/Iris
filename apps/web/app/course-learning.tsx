@@ -556,29 +556,76 @@ export function QuizCard({
                 )}
 
                 {qType === 'FILE_UPLOAD' && (
-                  <div style={{ marginTop: '8px', padding: '14px', border: '1px dashed var(--border-color)', borderRadius: '8px', background: 'var(--bg-elevated)' }}>
-                    <label style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '10px' }}>
-                      <input
-                        type="file"
-                        onChange={e => {
-                          const file = e.target.files?.[0];
-                          if (file) {
-                            setAnswers(prev => ({
-                              ...prev,
-                              [q.id]: {
-                                file_name: file.name,
-                                file_url: URL.createObjectURL(file),
-                              }
-                            }));
-                          }
-                        }}
-                      />
-                      <span className="small">Chọn tệp tài liệu nộp bài (PDF, DOCX, ZIP, MP4...)</span>
-                    </label>
-                    {answers[q.id]?.file_name && (
-                      <p className="small" style={{ margin: '8px 0 0', color: 'var(--green)' }}>
-                        Đã chọn tệp: <strong>{answers[q.id]?.file_name}</strong>
-                      </p>
+                  <div style={{ marginTop: '10px' }}>
+                    {answers[q.id]?.file_name ? (
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', border: '1px solid var(--border-color)', borderRadius: '8px', background: 'var(--bg-elevated)' }}>
+                        <div>
+                          <strong style={{ fontSize: '13px', display: 'block', color: 'var(--text-primary)' }}>
+                            {answers[q.id]?.file_name}
+                          </strong>
+                          <span className="small" style={{ color: 'var(--green)' }}>Đã sẵn sàng để nộp cùng bài thi</span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <label className="secondary button" style={{ margin: 0, padding: '4px 10px', fontSize: '12px', cursor: 'pointer', borderRadius: '6px' }}>
+                            Đổi tệp
+                            <input
+                              type="file"
+                              style={{ display: 'none' }}
+                              onChange={e => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  setAnswers(prev => ({
+                                    ...prev,
+                                    [q.id]: {
+                                      file_name: file.name,
+                                      file_url: URL.createObjectURL(file),
+                                    }
+                                  }));
+                                }
+                              }}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            className="danger button"
+                            style={{ margin: 0, padding: '4px 10px', fontSize: '12px', borderRadius: '6px' }}
+                            onClick={() => {
+                              setAnswers(prev => {
+                                const next = { ...prev };
+                                delete next[q.id];
+                                return next;
+                              });
+                            }}
+                          >
+                            Xóa tệp
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <label style={{ display: 'block', border: '2px dashed var(--border-color)', borderRadius: '10px', padding: '20px', textAlign: 'center', cursor: 'pointer', background: 'var(--bg-elevated)', transition: 'all 0.2s' }}>
+                        <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--green)', display: 'block', marginBottom: '4px' }}>
+                          Tải lên tệp tài liệu nộp bài
+                        </span>
+                        <span className="small" style={{ color: 'var(--text-muted)' }}>
+                          Hỗ trợ PDF, DOCX, ZIP, MP4, PNG, JPG... (Nhấp để chọn từ máy tính)
+                        </span>
+                        <input
+                          type="file"
+                          style={{ display: 'none' }}
+                          onChange={e => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              setAnswers(prev => ({
+                                ...prev,
+                                [q.id]: {
+                                  file_name: file.name,
+                                  file_url: URL.createObjectURL(file),
+                                }
+                              }));
+                            }
+                          }}
+                        />
+                      </label>
                     )}
                   </div>
                 )}

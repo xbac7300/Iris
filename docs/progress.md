@@ -600,7 +600,42 @@ Toàn bộ các yêu cầu P0 trong AGENTS.md cho Topic 16 LMS (Web 3 vai trò +
    - **Unit Tests**: 16/16 tests PASS (5 suites).
    - **Integration Tests**: 17/17 tests PASS với PostgreSQL thật.
    - **Tệp Release APK**: Đã biên dịch hoàn tất tại `C:\CNPM_CK\app-release.apk`
-   - **SHA-256 Checksum**: `FF33D7BE38CB3B72276073AAD537AAF5E46819798070BFD6AA367E8FB6BC7627`
+   - **SHA-256 Checksum**: `5C10CA7708C2330BCCEF3C3836061893713B12ABEA110A5E4EC44D61EB4D6938`
+
+---
+
+### 11. Ẩn Khóa Share Khỏi Danh Mục Khám Phá, Khóa Chặt Truy Cập Khi Chưa Đăng Ký & Nộp Bài Bằng Tệp Upload
+
+1. **Khóa học Chia sẻ qua Liên kết (`access_mode === 'LINK'`)**:
+   - Trong danh mục khóa học (Tất cả khóa học / Khám phá) của Học viên: Toàn bộ các khóa học `LINK` đều bị ẩn hoàn toàn, học viên không thể thấy hoặc bấm vào từ danh sách chung.
+   - Người dùng chỉ có thể mở khóa học khi truy cập trực tiếp qua đường dẫn (`/?course={id}`).
+   - Ngay cả khi mở qua đường dẫn, học viên vẫn **BẮT BUỘC** phải nhấn "Đăng ký học ngay" thì mới được mở khóa bài giảng và bài thi.
+
+2. **Khóa chặt nội dung học tập khi chưa đăng ký (`canRead`)**:
+   - Trên Web (`course-editor.tsx`): Trước đây khung `<div className="editor-grid">` vẫn hiển thị bên dưới ô Đăng ký học, cho phép xem bài giảng. Đã bọc điều kiện nghiêm ngặt: khi `!canRead`, toàn bộ bài giảng, phụ đề, trợ lý AI và bài kiểm tra đều **KHÔNG RENDER**, chỉ hiển thị bảng thông tin và nút "Đăng ký học ngay".
+   - Trên Mobile (`course/[id].tsx`): Tách biệt rõ ràng chế độ Giảng viên và Học viên. Khi học viên (kể cả chủ khóa chuyển sang vai trò học viên) chưa đăng ký, hệ thống không cấp quyền xem bài giảng, yêu cầu đăng ký trước khi bắt đầu lộ trình.
+
+3. **Nâng cấp Bài tập Nộp bài bằng Tệp sang Upload Thực tế (`expo-document-picker`)**:
+   - Trên Mobile (`apps/mobile/src/learning.tsx`): Thay thế ô nhập text liên kết bằng nút tải tệp thực tế sử dụng `expo-document-picker`. Cho phép chọn file trực tiếp từ điện thoại (PDF, Word, Ảnh, Zip...), hiển thị tên tệp, nút đổi tệp và nút xóa tệp trực quan.
+   - Trên Web (`apps/web/app/course-learning.tsx`): Nâng cấp giao diện upload bài tập thành khung kéo thả/chọn tệp chuyên nghiệp, hỗ trợ xem trước tên tệp, đổi tệp và xóa tệp.
+
+4. **Chuẩn hóa Dữ liệu Hệ thống**:
+   - Chuẩn hóa đúng **3 khóa học cốt lõi**:
+     1. *Lập trình Fullstack Next.js & NestJS Chuyên Nghiệp* (Công khai - PUBLIC)
+     2. *Khoa học Dữ liệu & Ứng dụng AI RAG Thực chiến* (Chia sẻ liên kết - LINK, ẩn khỏi khám phá)
+     3. *Thiết kế Trải nghiệm Người dùng & Mobile App React Native* (Công khai - PUBLIC)
+   - Chuẩn hóa đúng **3 tài khoản chính**:
+     - `admin@lms.example` (ChangeMe123!)
+     - `instructor@lms.example` (ChangeMe123!)
+     - `student@lms.example` (ChangeMe123!)
+   - Đưa số lượng học viên ghi danh (`enrollments`) về **0** để đảm bảo bắt buộc đăng ký khi thử nghiệm.
+
+5. **Kiểm thử & Bản phát hành Android APK**:
+   - **Typecheck**: 10/10 workspace packages đạt 0 lỗi.
+   - **Unit Tests**: 5/5 test suites passed, 16/16 unit tests passed.
+   - **Integration Tests**: 17/17 tests passed hoàn toàn với PostgreSQL thật.
+   - **Tệp Release APK**: Đã biên dịch hoàn tất tại `C:\CNPM_CK\app-release.apk`
+   - **SHA-256 Checksum**: `5C10CA7708C2330BCCEF3C3836061893713B12ABEA110A5E4EC44D61EB4D6938`
 
 ---
 
@@ -628,4 +663,39 @@ Toàn bộ các yêu cầu P0 trong AGENTS.md cho Topic 16 LMS (Web 3 vai trò +
    - **Unit Tests**: 5/5 test suites passed, 16/16 unit tests passed.
    - **Integration Tests**: 17/17 tests passed hoàn toàn với PostgreSQL thật.
    - **Tệp Release APK**: Đã biên dịch hoàn tất tại `C:\CNPM_CK\app-release.apk`
-   - **SHA-256 Checksum**: `FF33D7BE38CB3B72276073AAD537AAF5E46819798070BFD6AA367E8FB6BC7627`
+   - **SHA-256 Checksum**: `5C10CA7708C2330BCCEF3C3836061893713B12ABEA110A5E4EC44D61EB4D6938`
+
+---
+
+### 11. Ẩn Khóa Share Khỏi Danh Mục Khám Phá, Khóa Chặt Truy Cập Khi Chưa Đăng Ký & Nộp Bài Bằng Tệp Upload
+
+1. **Khóa học Chia sẻ qua Liên kết (`access_mode === 'LINK'`)**:
+   - Trong danh mục khóa học (Tất cả khóa học / Khám phá) của Học viên: Toàn bộ các khóa học `LINK` đều bị ẩn hoàn toàn, học viên không thể thấy hoặc bấm vào từ danh sách chung.
+   - Người dùng chỉ có thể mở khóa học khi truy cập trực tiếp qua đường dẫn (`/?course={id}`).
+   - Ngay cả khi mở qua đường dẫn, học viên vẫn **BẮT BUỘC** phải nhấn "Đăng ký học ngay" thì mới được mở khóa bài giảng và bài thi.
+
+2. **Khóa chặt nội dung học tập khi chưa đăng ký (`canRead`)**:
+   - Trên Web (`course-editor.tsx`): Trước đây khung `<div className="editor-grid">` vẫn hiển thị bên dưới ô Đăng ký học, cho phép xem bài giảng. Đã bọc điều kiện nghiêm ngặt: khi `!canRead`, toàn bộ bài giảng, phụ đề, trợ lý AI và bài kiểm tra đều **KHÔNG RENDER**, chỉ hiển thị bảng thông tin và nút "Đăng ký học ngay".
+   - Trên Mobile (`course/[id].tsx`): Tách biệt rõ ràng chế độ Giảng viên và Học viên. Khi học viên (kể cả chủ khóa chuyển sang vai trò học viên) chưa đăng ký, hệ thống không cấp quyền xem bài giảng, yêu cầu đăng ký trước khi bắt đầu lộ trình.
+
+3. **Nâng cấp Bài tập Nộp bài bằng Tệp sang Upload Thực tế (`expo-document-picker`)**:
+   - Trên Mobile (`apps/mobile/src/learning.tsx`): Thay thế ô nhập text liên kết bằng nút tải tệp thực tế sử dụng `expo-document-picker`. Cho phép chọn file trực tiếp từ điện thoại (PDF, Word, Ảnh, Zip...), hiển thị tên tệp, nút đổi tệp và nút xóa tệp trực quan.
+   - Trên Web (`apps/web/app/course-learning.tsx`): Nâng cấp giao diện upload bài tập thành khung kéo thả/chọn tệp chuyên nghiệp, hỗ trợ xem trước tên tệp, đổi tệp và xóa tệp.
+
+4. **Chuẩn hóa Dữ liệu Hệ thống**:
+   - Chuẩn hóa đúng **3 khóa học cốt lõi**:
+     1. *Lập trình Fullstack Next.js & NestJS Chuyên Nghiệp* (Công khai - PUBLIC)
+     2. *Khoa học Dữ liệu & Ứng dụng AI RAG Thực chiến* (Chia sẻ liên kết - LINK, ẩn khỏi khám phá)
+     3. *Thiết kế Trải nghiệm Người dùng & Mobile App React Native* (Công khai - PUBLIC)
+   - Chuẩn hóa đúng **3 tài khoản chính**:
+     - `admin@lms.example` (ChangeMe123!)
+     - `instructor@lms.example` (ChangeMe123!)
+     - `student@lms.example` (ChangeMe123!)
+   - Đưa số lượng học viên ghi danh (`enrollments`) về **0** để đảm bảo bắt buộc đăng ký khi thử nghiệm.
+
+5. **Kiểm thử & Bản phát hành Android APK**:
+   - **Typecheck**: 10/10 workspace packages đạt 0 lỗi.
+   - **Unit Tests**: 5/5 test suites passed, 16/16 unit tests passed.
+   - **Integration Tests**: 17/17 tests passed hoàn toàn với PostgreSQL thật.
+   - **Tệp Release APK**: Đã biên dịch hoàn tất tại `C:\CNPM_CK\app-release.apk`
+   - **SHA-256 Checksum**: `5C10CA7708C2330BCCEF3C3836061893713B12ABEA110A5E4EC44D61EB4D6938`

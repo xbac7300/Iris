@@ -81,7 +81,7 @@ export default function CourseScreen() {
   const [message, setMessage] = useState('');
   const [enrolling, setEnrolling] = useState(false);
 
-  const isOwner = Boolean(session?.user && course && session.user.id === course.owner_id);
+  const isOwner = Boolean(session?.user && course && session.user.id === course.owner_id && getActiveRoleMode() === 'INSTRUCTOR');
   const isAdmin = Boolean(session?.user?.roles?.includes('ADMIN'));
   const isCourseLockedForUser = Boolean(course?.is_locked && !isAdmin);
 
@@ -121,8 +121,9 @@ export default function CourseScreen() {
           setPlayback(null);
           return;
         }
-        const userIsOwner = Boolean(session.user && fetchedCourse.owner_id === session.user.id);
-        const userIsAdmin = Boolean(session.user?.roles?.includes('ADMIN'));
+        const isInstructorMode = getActiveRoleMode() === 'INSTRUCTOR';
+        const userIsOwner = Boolean(session.user && fetchedCourse.owner_id === session.user.id && isInstructorMode);
+        const userIsAdmin = Boolean(session.user?.roles?.includes('ADMIN') && getActiveRoleMode() === 'ADMIN');
         const userIsEnrolled = Boolean(fetchedCourse.user_enrolled);
         hasReadAccess = Boolean(userIsOwner || userIsAdmin || userIsEnrolled);
         setCanRead(hasReadAccess);

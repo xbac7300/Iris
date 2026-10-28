@@ -795,9 +795,12 @@ export default function Home() {
   // Filter courses for student/instructor view
   const filteredCourses = courses
     .filter(c => {
-      // In student mode, hide courses with access_mode LINK or RESTRICTED unless student is already enrolled or explicitly invited
+      // Trong chế độ Học viên: Khóa share link bắt buộc ẩn khỏi danh mục (chỉ hiện khi đã đăng ký)
       if (activeRoleMode === 'STUDENT') {
-        if ((c.access_mode === 'LINK' || c.access_mode === 'RESTRICTED') && !c.user_enrolled) {
+        if (c.access_mode === 'LINK' && !c.user_enrolled) {
+          return false;
+        }
+        if (c.access_mode === 'RESTRICTED' && !c.user_enrolled) {
           const userEmail = (user?.email || '').toLowerCase();
           const isAllowed = c.allowed_emails && c.allowed_emails.some((e: string) => e.toLowerCase() === userEmail);
           if (!isAllowed) {
@@ -1745,7 +1748,14 @@ export default function Home() {
                   <View style={styles.instructorActionBar}>
                     <TouchableOpacity
                       style={styles.createCourseBtn}
-                      onPress={() => setShowCreateCourseModal(true)}
+                      onPress={() => {
+                        setNewCourseTitle('');
+                        setNewCourseDesc('');
+                        setNewCourseThumbnail('');
+                        setNewCourseEmails('');
+                        setNewCourseAccessMode('PUBLIC');
+                        setShowCreateCourseModal(true);
+                      }}
                     >
                       <Text style={styles.createCourseBtnText}>+ Soạn tạo khóa học mới</Text>
                     </TouchableOpacity>
@@ -2378,14 +2388,16 @@ export default function Home() {
                     key={m}
                     style={[
                       styles.segmentPill,
-                      newCourseAccessMode === m && styles.segmentPillActive,
+                      { backgroundColor: colors.cardElevated, borderColor: colors.border },
+                      newCourseAccessMode === m && { backgroundColor: colors.primary, borderColor: colors.primary },
                     ]}
-                    onPress={() => setNewCourseAccessMode(m as any)}
+                    onPress={() => setNewCourseAccessMode(m as 'PUBLIC' | 'LINK' | 'RESTRICTED')}
                   >
                     <Text
                       style={[
                         styles.segmentPillText,
-                        newCourseAccessMode === m && styles.segmentPillTextActive,
+                        { color: colors.textSecondary },
+                        newCourseAccessMode === m && { color: '#ffffff', fontWeight: '700' },
                       ]}
                     >
                       {lbl}

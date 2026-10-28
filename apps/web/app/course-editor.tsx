@@ -200,6 +200,15 @@ export function CourseEditor({ initial, onBack, onChange, isInstructorMode }: { 
         if (live.current) { setModules([]); setLessons([]); setCanRead(false); }
         return;
       }
+      const hasAccess = Boolean(canManage || isAdmin || latestCourse?.user_enrolled);
+      if (!hasAccess) {
+        if (live.current) {
+          setModules([]);
+          setLessons([]);
+          setCanRead(false);
+        }
+        return;
+      }
       const allModules: Module[] = [], allLessons: Lesson[] = [];
       for (let offset = 0; offset <= 10000; offset += 100) {
         const { data, error } = await session.api.GET('/api/v1/courses/{id}/modules', { params: { path: { id: initial.id }, query: { limit: 100, offset } } });
@@ -213,7 +222,7 @@ export function CourseEditor({ initial, onBack, onChange, isInstructorMode }: { 
       if (live.current) {
         setModules(allModules);
         setLessons(allLessons);
-        setCanRead(Boolean(canManage || isAdmin || latestCourse?.user_enrolled));
+        setCanRead(true);
       }
     } catch (error) { if (live.current) setMessage(errorText(error)); }
     finally { flight.current = false; if (live.current) setLoaded(true); }
@@ -720,19 +729,35 @@ export function CourseEditor({ initial, onBack, onChange, isInstructorMode }: { 
       </div>
     )}
     {!loaded ? <p role="status">Đang tải nội dung…</p> : <>
-      {!course.user_enrolled && !canManage && !isInstructorMode && !isLocked && (
-        <div className="panel" style={{ marginBottom: '20px' }}>
-          <h3>Bắt đầu học khóa này</h3>
-          <p>Đăng ký để mở toàn bộ bài giảng và xem video.</p>
-          <button disabled={busy || course.status !== 'PUBLISHED'} onClick={() => void act(async () => {
-            const { error } = await session.api.POST('/api/v1/courses/{id}/enrollments', { params: { path: { id: course.id } } });
-            if (error) throw new Error(error.message);
-          })}>
-            Đăng ký học
+      {!canRead && (
+        <div style={{ maxWidth: '640px', margin: '30px auto', padding: '36px 24px', background: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: '14px', textAlign: 'center', boxShadow: '0 8px 30px rgba(0,0,0,0.1)' }}>
+          <h3 style={{ fontSize: '22px', fontWeight: 700, margin: '0 0 10px', color: 'var(--text-primary)' }}>Bắt đầu lộ trình học tập ngay</h3>
+          <p style={{ margin: '0 0 24px', color: 'var(--text-secondary)', fontSize: '15px', lineHeight: 1.6 }}>
+            Đăng ký khóa học để mở khóa toàn bộ bài giảng video, phụ đề transcript đồng bộ, trợ lý hỏi đáp AI RAG và các bài kiểm tra đánh giá năng lực.
+          </p>
+          <button
+            type="button"
+            className="primary"
+            style={{ fontSize: '15px', padding: '12px 32px', minWidth: '180px', borderRadius: '8px' }}
+            disabled={busy || course.status !== 'PUBLISHED' || isLocked}
+            onClick={() => void act(async () => {
+              const { error } = await session.api.POST('/api/v1/courses/{id}/enrollments', { params: { path: { id: course.id } } });
+              if (error) throw new Error(error.message);
+              await load();
+            })}
+          >
+            {isLocked
+              ? 'Khóa học đang tạm khóa'
+              : course.status !== 'PUBLISHED'
+              ? 'Khóa học chưa xuất bản'
+              : 'Đăng ký học ngay'}
           </button>
+          <div style={{ marginTop: '30px', textAlign: 'left', borderTop: '1px solid var(--border-color)', paddingTop: '20px' }}>
+            <CourseFeedback courseId={course.id} isOwner={false} />
+          </div>
         </div>
       )}
-      <div className="editor-grid"><div>
+      {canRead && <div className="editor-grid"><div>
         {canManage && course.status === 'PUBLISHED' && (
           <div className="published-notice-banner" style={{ padding: '12px 16px', background: 'rgba(33, 99, 79, 0.08)', borderRadius: '8px', border: '1px solid var(--green)', marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
             <div>
@@ -1093,7 +1118,7 @@ export function CourseEditor({ initial, onBack, onChange, isInstructorMode }: { 
         )}
         {!canManage && <p className="small">Chọn Xem video ở bài học để bắt đầu.</p>}
         <div className="ai-note"><strong>Hiểu bài cùng trợ giảng AI</strong><p>Mở video để đọc transcript, xem tóm tắt và đặt câu hỏi có nguồn từ bài giảng.</p></div>
-      </aside></div>
+      </aside></div>}
     </>}
     {actionModal && (
       <div className="modal-backdrop" style={{
