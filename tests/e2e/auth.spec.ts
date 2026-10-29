@@ -1,9 +1,4 @@
 import { expect, test } from '@playwright/test';
-import { copyFileSync, mkdirSync } from 'node:fs';
-import { resolve } from 'node:path';
-
-const ARTIFACT_DIR = 'C:/Users/GenZ/.gemini/antigravity/brain/2240e41d-5d02-42e4-8e1c-35b9b6f52096';
-mkdirSync(ARTIFACT_DIR, { recursive: true });
 
 test('học viên đăng ký, khôi phục cookie sau reload và đăng xuất', async ({ page }) => {
   await page.goto('/');
@@ -99,10 +94,6 @@ test('giảng viên đăng nhập, sử dụng nút gạt chuyển giao diện/t
   await expect(draftNavBtn).toHaveClass(/nav-active/);
   await expect(allCoursesNavBtn).not.toHaveClass(/nav-active/);
 
-  const navActivePath = resolve('test-results/ui-sidebar-nav-active.png');
-  await page.screenshot({ path: navActivePath, fullPage: true });
-  copyFileSync(navActivePath, resolve(ARTIFACT_DIR, 'ui-sidebar-nav-active.png'));
-
   // Click back to "Khóa học"
   await allCoursesNavBtn.click();
   await expect(allCoursesNavBtn).toHaveClass(/nav-active/);
@@ -130,17 +121,10 @@ test('giảng viên đăng nhập, sử dụng nút gạt chuyển giao diện/t
   await page.getByRole('button', { name: 'Thêm bài kiểm tra' }).click();
   await page.getByLabel('Tên bài kiểm tra').fill('Kiểm tra chương 1');
   await page.getByLabel('Nội dung câu hỏi').fill('Python là gì?');
-  await page.getByRole('textbox', { name: 'Câu 1, lựa chọn 1' }).fill('Ngôn ngữ lập trình');
-  await page.getByRole('textbox', { name: 'Câu 1, lựa chọn 2' }).fill('Hệ điều hành');
-  await page.getByRole('textbox', { name: 'Câu 1, lựa chọn 3' }).fill('Phần cứng máy tính');
-  await page.getByRole('textbox', { name: 'Câu 1, lựa chọn 4' }).fill('Trình duyệt web');
+  await page.getByLabel('Câu 1, lựa chọn 1').fill('Ngôn ngữ lập trình');
   await page.getByRole('button', { name: 'Lưu bài kiểm tra' }).click();
   await expect(page.getByRole('heading', { name: 'Kiểm tra chương 1' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Xóa bài kiểm tra' })).toBeVisible();
-
-  const courseEditorPartsPath = resolve('test-results/ui-course-chapters-lessons-quizzes.png');
-  await page.screenshot({ path: courseEditorPartsPath, fullPage: true });
-  copyFileSync(courseEditorPartsPath, resolve(ARTIFACT_DIR, 'ui-course-chapters-lessons-quizzes.png'));
 
   // 4. Test action scheduling modal (e.g., Lưu trữ khóa học)
   await page.getByRole('button', { name: 'Lưu trữ khóa học' }).click();
@@ -151,10 +135,6 @@ test('giảng viên đăng nhập, sử dụng nút gạt chuyển giao diện/t
   // Select "Lên lịch theo ngày giờ"
   await page.getByLabel('Lên lịch theo ngày giờ').check();
   await expect(page.getByLabel('Chọn thời gian áp dụng:')).toBeVisible();
-
-  const modalPath = resolve('test-results/ui-action-scheduling-modal.png');
-  await page.screenshot({ path: modalPath, fullPage: true });
-  copyFileSync(modalPath, resolve(ARTIFACT_DIR, 'ui-action-scheduling-modal.png'));
 
   // Close modal via Hủy bỏ
   await page.getByRole('button', { name: 'Hủy bỏ' }).click();

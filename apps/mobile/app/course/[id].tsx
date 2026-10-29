@@ -8,6 +8,7 @@ import {
   Platform,
   ScrollView,
   Share,
+  StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -1005,13 +1006,23 @@ export default function CourseScreen() {
                     </View>
 
                     <View style={styles.metaRating}>
-                      <Text style={[styles.metaRatingScore, { color: colors.text }]}>
-                        {course.avg_rating && Number(course.avg_rating) > 0
-                          ? `${Number(course.avg_rating).toFixed(1)} / 5 sao`
-                          : 'Mới'}
-                      </Text>
+                      {course.avg_rating && Number(course.avg_rating) > 0 ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                          <Text style={{ color: '#f59e0b', fontSize: 13, letterSpacing: 1 }}>
+                            {'★'.repeat(Math.round(Number(course.avg_rating)))}
+                            <Text style={{ color: colors.border }}>
+                              {'★'.repeat(5 - Math.min(5, Math.round(Number(course.avg_rating))))}
+                            </Text>
+                          </Text>
+                          <Text style={[styles.metaRatingScore, { color: colors.text }]}>
+                            {Number(course.avg_rating).toFixed(1)}
+                          </Text>
+                        </View>
+                      ) : (
+                        <Text style={[styles.metaRatingScore, { color: colors.textMuted }]}>Chưa có đánh giá</Text>
+                      )}
                       {course.review_count && Number(course.review_count) > 0 ? (
-                        <Text style={[styles.metaReviewCount, { color: colors.textMuted }]}>({course.review_count} đánh giá)</Text>
+                        <Text style={[styles.metaReviewCount, { color: colors.textMuted }]}>({course.review_count})</Text>
                       ) : null}
                     </View>
                   </View>
@@ -1256,7 +1267,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: Platform.OS === 'ios' ? 48 : 36,
+    paddingTop: Platform.OS === 'ios' ? 50 : (StatusBar.currentHeight ? StatusBar.currentHeight + 10 : 42),
     paddingHorizontal: 16,
     paddingBottom: 10,
     borderBottomWidth: 1,
